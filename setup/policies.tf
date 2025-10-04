@@ -49,8 +49,9 @@ data "aws_iam_policy_document" "ecr" {
       "ecr:PutImage"
     ]
     resources = [
-      aws_ecr_repository.morla_app.arn,
-      aws_ecr_repository.morla_api_proxy.arn,
+      aws_ecr_repository.paperwurks_backend.arn,
+        aws_ecr_repository.celery_worker.arn,
+        aws_ecr_repository.nginx_proxy.arn
     ]
   }
 }

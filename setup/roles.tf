@@ -71,7 +71,7 @@ resource "aws_iam_role_policy_attachment" "logs" {
 #######################################
 
 resource "aws_iam_role" "deploy_role" {
-  name = "morla-deploy-role"
+  name = "${var.project_name}-deploy-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

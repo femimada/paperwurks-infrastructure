@@ -1,5 +1,14 @@
-- name: Configure AWS creds
-  uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/morla-terraform-role
-    aws-region: us-east-1
+name: AWS Configuration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure-aws-creds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_INFRA_ROLE_ARN }}
+          aws-region: us-east-1
