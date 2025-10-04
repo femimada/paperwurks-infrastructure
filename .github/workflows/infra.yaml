@@ -1,0 +1,5 @@
+- name: Configure AWS creds
+  uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/morla-terraform-role
+    aws-region: us-east-1
