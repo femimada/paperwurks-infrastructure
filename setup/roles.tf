@@ -30,7 +30,7 @@ resource "aws_iam_role" "infra_role" {
             # infra repo only
             "token.actions.githubusercontent.com:sub" = [
               "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main",
-              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/staging"
+              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/release"
             ]
           }
         }
@@ -76,7 +76,7 @@ resource "aws_iam_role" "deploy_role" {
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:femimada/paperwurks-python-backend:ref:refs/heads/main",
-            "repo:femimada/paperwurks-python-backend:ref:refs/heads/staging"
+            "repo:femimada/paperwurks-python-backend:ref:refs/heads/release"
           ]
         }
       }

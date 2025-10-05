@@ -4,24 +4,27 @@ on:
   pull_request:
     branches:
       - dev
-      - staging
+      - release
       - main
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+    inputs:
+      environment:
+        type: environment
+        description: Select the environment
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  TARGET_ENV: dev
-  WORKING_DIR: environments/dev
-  AWS_REGION: eu-west-2
-
 jobs:
   test_iac_build:
     name: Terraform Test Apply & Destroy
     runs-on: ubuntu-latest
+
+    environment: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment }}
+    env:
+      WORKING_DIR: environments/${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment }}
 
     steps:
       - name: Checkout Code
@@ -30,7 +33,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       # 2. Setup Terraform
       - name: Setup Terraform
