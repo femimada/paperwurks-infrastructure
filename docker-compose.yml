@@ -1,0 +1,12 @@
+services:
+  terraform:
+    image: hashicorp/terraform:1.6.2
+    container_name: terraform
+    working_dir: /workspace/setup
+    entrypoint: ["terraform"]
+    volumes:
+      - .:/workspace:delegated # Mount entire repo for local dev
+      - $HOME/.aws:/root/.aws:ro # Local AWS credentials for dev
+    env_file:
+      - .env
+    tty: true

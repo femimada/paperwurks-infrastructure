@@ -1,14 +1,66 @@
-name: AWS Configuration
+name: IaC Test Build and Tear Down
 
 on:
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TARGET_ENV: dev
+  WORKING_DIR: environments/dev
+  AWS_REGION: eu-west-2
+
 jobs:
-  configure-aws-creds:
+  test_iac_build:
+    name: Terraform Test Apply & Destroy
     runs-on: ubuntu-latest
+
     steps:
-      - name: Configure AWS creds
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Configure AWS Credentials (Infra Role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_INFRA_ROLE_ARN }}
-          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 2. Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # 3. Terraform Init (Uses the dev backend configuration)
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ${{ env.WORKING_DIR }}
+
+      # 4. Terraform Validate (Syntax and file structure check)
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ env.WORKING_DIR }}
+
+      # 5. Terraform Plan (Checks for expected changes)
+      - name: Terraform Plan
+        run: terraform plan -destroy -no-color -input=false -out=tfplan-test
+        working-directory: ${{ env.WORKING_DIR }}
+
+      # 6. Apply & Build (Provisions all resources for the test)
+      - name: Terraform Apply (Build Test Environment)
+        run: terraform apply -auto-approve
+        working-directory: ${{ env.WORKING_DIR }}
+
+      # 7. Terraform Destroy (The Cleanup)
+      - name: Terraform Destroy (Clean Up)
+        # The 'if' condition ensures this step always runs, even if the 'apply' failed,
+        # to attempt to clean up partial resources. 'always()' is critical here.
+        if: always()
+        run: terraform destroy -auto-approve
+        working-directory: ${{ env.WORKING_DIR }}

@@ -5,7 +5,13 @@ variable "aws_region" {
 }
 
 variable "project_name" {
-  description = "Project name for resource naming"
+  description = "Name prefix for all infrastructure resources"
   type        = string
   default     = "paperwurks"
+}
+
+variable "environment" {
+  type        = string
+  description = "The environment name: dev, staging, prod, shared"
+  default     = "shared" # Change this default as needed
 }

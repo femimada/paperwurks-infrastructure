@@ -15,7 +15,7 @@ output "region" {
 }
 
 output "backend_config" {
-  value = <<-EOT
+  value       = <<-EOT
     terraform {
       backend "s3" {
         bucket         = "${aws_s3_bucket.terraform_state.id}"

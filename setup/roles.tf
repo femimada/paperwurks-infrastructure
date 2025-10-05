@@ -2,8 +2,19 @@
 # Role 1: Terraform Infra Role (infra repo only)
 #######################################
 
-resource "aws_iam_role" "terraform_role" {
-  name = "${var.project_name}-terraform-role"
+resource "aws_iam_role" "infra_role" {
+  name                  = "${var.project_name}-terraform-role"
+  force_detach_policies = true
+
+  tags = {
+    Project     = "Paperwurks"
+    ManagedBy   = "Terraform"
+    Environment = "shared"
+    RoleType    = "Infra"
+  }
+  lifecycle {
+     ignore_changes = [tags_all]
+  }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,8 +29,8 @@ resource "aws_iam_role" "terraform_role" {
           StringLike = {
             # infra repo only
             "token.actions.githubusercontent.com:sub" = [
-              "repo:my-org/infra-repo:ref:refs/heads/main",
-              "repo:my-org/infra-repo:ref:refs/heads/staging"
+              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main",
+              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/staging"
             ]
           }
         }
@@ -28,50 +39,30 @@ resource "aws_iam_role" "terraform_role" {
   })
 }
 
-
-
-# Attach infrastructure policies
-resource "aws_iam_role_policy_attachment" "tf_backend" {
-  role       = aws_iam_role.terraform_role.name
+# Attach infrastructure policies (namespaced)
+resource "aws_iam_role_policy_attachment" "infra_tf_backend" {
+  role       = aws_iam_role.infra_role.name
   policy_arn = aws_iam_policy.tf_backend.arn
 }
 
-# EC2 Policy
-resource "aws_iam_role_policy_attachment" "ec2" {
-  role       = aws_iam_role.terraform_role.name
-  policy_arn = aws_iam_policy.ec2.arn
-}
-
-# RDS Policy
-resource "aws_iam_role_policy_attachment" "rds" {
-  role       = aws_iam_role.terraform_role.name
-  policy_arn = aws_iam_policy.rds.arn
-}
-
-# ECS Policy
-resource "aws_iam_role_policy_attachment" "ecs" {
-  role       = aws_iam_role.terraform_role.name
-  policy_arn = aws_iam_policy.ecs.arn
-}
-
-# IAM Policy
-resource "aws_iam_role_policy_attachment" "iam" {
-  role       = aws_iam_role.terraform_role.name
-  policy_arn = aws_iam_policy.iam.arn
-}
-
-# CloudWatch Logs
-resource "aws_iam_role_policy_attachment" "logs" {
-  role       = aws_iam_role.terraform_role.name
-  policy_arn = aws_iam_policy.logs.arn
-}
 
 #######################################
-# Role 2: Deploy Role For the app repo
+# Role 2: Deploy Role (app repo only)
 #######################################
 
 resource "aws_iam_role" "deploy_role" {
-  name = "${var.project_name}-deploy-role"
+  name                  = "${var.project_name}-deploy-role"
+  force_detach_policies = true
+
+  tags = {
+    Project     = "Paperwurks"
+    ManagedBy   = "Terraform"
+    Environment = "shared"
+    RoleType    = "Deploy"
+  }
+  lifecycle {
+     ignore_changes = [tags_all]
+  }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -84,8 +75,8 @@ resource "aws_iam_role" "deploy_role" {
       Condition = {
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
-            "repo:my-org/app-repo:ref:refs/heads/main",
-            "repo:my-org/app-repo:ref:refs/heads/staging"
+            "repo:femimada/paperwurks-python-backend:ref:refs/heads/main",
+            "repo:femimada/paperwurks-python-backend:ref:refs/heads/staging"
           ]
         }
       }
@@ -93,13 +84,8 @@ resource "aws_iam_role" "deploy_role" {
   })
 }
 
-# ECR + ECS only
-resource "aws_iam_role_policy_attachment" "ecr" {
+# Attach deployment-specific policies
+resource "aws_iam_role_policy_attachment" "deploy_ecr" {
   role       = aws_iam_role.deploy_role.name
   policy_arn = aws_iam_policy.ecr.arn
-}
-
-resource "aws_iam_role_policy_attachment" "ecs" {
-  role       = aws_iam_role.deploy_role.name
-  policy_arn = aws_iam_policy.ecs.arn
 }
