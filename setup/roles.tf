@@ -13,7 +13,7 @@ resource "aws_iam_role" "infra_role" {
     RoleType    = "Infra"
   }
   lifecycle {
-     ignore_changes = [tags_all]
+    ignore_changes = [tags_all]
   }
 
   assume_role_policy = jsonencode({
@@ -26,8 +26,10 @@ resource "aws_iam_role" "infra_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
           StringLike = {
-            # infra repo only
             "token.actions.githubusercontent.com:sub" = [
               "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main",
               "repo:femimada/paperwurks-infrastructure:ref:refs/heads/release"
@@ -61,7 +63,7 @@ resource "aws_iam_role" "deploy_role" {
     RoleType    = "Deploy"
   }
   lifecycle {
-     ignore_changes = [tags_all]
+    ignore_changes = [tags_all]
   }
 
   assume_role_policy = jsonencode({
@@ -73,6 +75,9 @@ resource "aws_iam_role" "deploy_role" {
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:femimada/paperwurks-python-backend:ref:refs/heads/main",
