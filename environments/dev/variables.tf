@@ -96,7 +96,7 @@ variable "db_username" {
 # Storage Configuration
 variable "s3_lifecycle_rules" {
   description = "Lifecycle rules for S3 buckets"
-  type        = list(object({
+  type = list(object({
     id      = string
     enabled = bool
     transitions = list(object({

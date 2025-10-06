@@ -17,12 +17,15 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: terraform-${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment }}
+  cancel-in-progress: false
+
 jobs:
   test_iac_build:
     name: Terraform Test Apply & Destroy
     runs-on: ubuntu-latest
 
-    
     env:
       WORKING_DIR: environments/${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment }}
 
@@ -45,6 +48,10 @@ jobs:
         run: terraform init
         working-directory: ${{ env.WORKING_DIR }}
 
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: ${{ env.WORKING_DIR }}
+
       # 4. Terraform Validate (Syntax and file structure check)
       - name: Terraform Validate
         run: terraform validate
@@ -54,6 +61,12 @@ jobs:
       - name: Terraform Plan
         run: terraform plan -destroy -no-color -input=false -out=tfplan-test
         working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Save Plan Output
+        id: plan_output
+        run: terraform show tfplan-test -no-color
+        working-directory: ${{ env.WORKING_DIR }}
+        continue-on-error: true
 
       # 6. Apply & Build (Provisions all resources for the test)
       - name: Terraform Apply (Build Test Environment)

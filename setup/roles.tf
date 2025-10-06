@@ -93,3 +93,8 @@ resource "aws_iam_role_policy_attachment" "deploy_ecr" {
   role       = aws_iam_role.deploy_role.name
   policy_arn = aws_iam_policy.ecr.arn
 }
+
+resource "aws_iam_role_policy_attachment" "deploy_ecs" {
+  role       = aws_iam_role.deploy_role.name
+  policy_arn = aws_iam_policy.ecs_deploy.arn
+}

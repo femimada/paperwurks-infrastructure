@@ -2,7 +2,7 @@ services:
   terraform:
     image: hashicorp/terraform:1.6.2
     container_name: terraform
-    working_dir: /workspace/setup
+    working_dir: /workspace
     entrypoint: ["terraform"]
     volumes:
       - .:/workspace:delegated # Mount entire repo for local dev

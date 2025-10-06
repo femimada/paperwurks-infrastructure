@@ -42,17 +42,13 @@ data "aws_iam_policy_document" "ecr" {
   statement {
     effect = "Allow"
     actions = [
+      # Push permissions
       "ecr:CompleteLayerUpload",
       "ecr:UploadLayerPart",
       "ecr:InitiateLayerUpload",
       "ecr:BatchCheckLayerAvailability",
       "ecr:PutImage",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage",
-      "ecr:DescribeImages",
-      "ecr:DescribeRepositories",
-      "ecr:ListImages"
-      "ecr:PutImage",
+      # Pull/Read permissions
       "ecr:GetDownloadUrlForLayer",
       "ecr:BatchGetImage",
       "ecr:DescribeImages",
@@ -65,6 +61,47 @@ data "aws_iam_policy_document" "ecr" {
       aws_ecr_repository.nginx_proxy.arn
     ]
   }
+}
+
+
+data "aws_iam_policy_document" "ecs_deploy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DeregisterTaskDefinition",
+      "ecs:ListTaskDefinitions",
+      "ecs:DescribeTaskDefinition"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecs:UpdateService",
+      "ecs:DescribeServices",
+      "ecs:ListServices"
+    ]
+    resources = [
+      "arn:aws:ecs:*:*:service/*/*"
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:ListClusters"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "ecs_deploy" {
+  name        = "ecs-deploy-access"
+  description = "Allows ECS service deployment operations"
+  policy      = data.aws_iam_policy_document.ecs_deploy.json
 }
 
 resource "aws_iam_policy" "ecr" {

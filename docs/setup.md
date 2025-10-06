@@ -49,14 +49,28 @@ This split ensures a clean separation of concerns:
 - Builds and pushes container images to ECR
 - Deploys to pre-provisioned ECS services
 
-**Deployment Flow:**
+## Deployment Flow (Updated)
 
-1. Developer pushes code → Triggers CI pipeline
-2. Build & test → Linting, testing, static analysis
-3. Docker build → Image tagged (e.g., `backend:staging-<sha>`)
-4. AWS auth → GitHub Actions assumes `deploy-role` via OIDC
-5. Push to ECR → Image pushed to environment's ECR
-6. Deploy to ECS → ECS service updated via task definition
+### Backend Deployments
+
+1. Developer pushes code to branch (dev/release/main)
+2. GitHub Actions workflow triggered in backend repo
+3. Workflow assumes deploy-role via OIDC
+4. Docker image built and pushed to ECR
+5. ECS task definition updated with new image
+6. ECS service deployment triggered
+7. Workflow waits for deployment stability
+8. Deployment complete
+
+### Infrastructure Changes
+
+1. DevOps updates Terraform in infra repo
+2. PR opened and reviewed
+3. PR merged triggers infrastructure deployment
+4. Terraform applies changes
+5. Infrastructure updated (VPC, RDS, ECS clusters, etc.)
+
+**Key Principle:** Backend repo deploys applications, Infra repo manages platforms.
 
 ## Security & Access Model
 
