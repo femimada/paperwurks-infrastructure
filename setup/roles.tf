@@ -47,6 +47,11 @@ resource "aws_iam_role_policy_attachment" "infra_management" {
   policy_arn = aws_iam_policy.infra_management.arn
 }
 
+resource "aws_iam_role_policy_attachment" "infra_cost_explorer" {
+  role       = aws_iam_role.infra_role.name
+  policy_arn = aws_iam_policy.cost_explorer.arn
+}
+
 #######################################
 # Role 2: Deploy Role (app repo only)
 #######################################
@@ -98,3 +103,6 @@ resource "aws_iam_role_policy_attachment" "deploy_ecs" {
   role       = aws_iam_role.deploy_role.name
   policy_arn = aws_iam_policy.ecs_deploy.arn
 }
+
+
+

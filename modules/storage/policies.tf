@@ -68,27 +68,10 @@ data "aws_iam_policy_document" "uploads_bucket_policy" {
     }
   }
 
-  # Enforce max file size (100MB)
-  statement {
-    sid    = "EnforceMaxFileSize"
-    effect = "Deny"
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-    actions = ["s3:PutObject"]
-    resources = [
-      "${aws_s3_bucket.uploads.arn}/*"
-    ]
-    condition {
-      test     = "NumericGreaterThan"
-      variable = "s3:content-length"
-      values   = ["104857600"] # 100MB in bytes
-    }
-  }
 }
 
 resource "aws_s3_bucket_policy" "uploads" {
   bucket = aws_s3_bucket.uploads.id
   policy = data.aws_iam_policy_document.uploads_bucket_policy.json
 }
+

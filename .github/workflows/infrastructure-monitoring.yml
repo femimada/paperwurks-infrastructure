@@ -26,7 +26,7 @@ jobs:
       - name: Check Running Resources
         id: resources
         run: |
-          echo "##  infraestructura Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "##  Infrastructure Status Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Check ECS clusters

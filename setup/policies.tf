@@ -169,7 +169,17 @@ data "aws_iam_policy_document" "infra_management" {
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
       "iam:TagRole",
-      "iam:UntagRole"
+      "iam:UntagRole",
+      "iam:TagPolicy",                        
+      "iam:UntagPolicy",                      
+      "iam:CreateInstanceProfile",            
+      "iam:DeleteInstanceProfile",            
+      "iam:GetInstanceProfile",               
+      "iam:AddRoleToInstanceProfile",         
+      "iam:RemoveRoleFromInstanceProfile",    
+      "iam:ListInstanceProfilesForRole",      
+      "iam:CreateServiceLinkedRole",          
+      "iam:DeleteServiceLinkedRole"           
     ]
     resources = ["*"]
   }
@@ -194,10 +204,48 @@ data "aws_iam_policy_document" "infra_management" {
     actions   = ["logs:*"]
     resources = ["*"]
   }
+
+  # SNS (for monitoring alerts)
+  statement {
+    effect = "Allow"
+    actions = [
+      "sns:*"
+    ]
+    resources = ["*"]
+  }
+
+  # CloudWatch (for monitoring and dashboards)
+  statement {
+    effect = "Allow"
+    actions = [
+      "cloudwatch:*"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "infra_management" {
   name        = "infra-management-policy"
   description = "Full infrastructure management permissions for Terraform"
   policy      = data.aws_iam_policy_document.infra_management.json
+}
+
+
+data "aws_iam_policy_document" "cost_explorer" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ce:GetCostAndUsage",
+      "ce:GetCostForecast",
+      "ce:GetDimensionValues",
+      "ce:GetTags"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "cost_explorer" {
+  name        = "cost-explorer-access"
+  description = "Allow read access to Cost Explorer for cost monitoring"
+  policy      = data.aws_iam_policy_document.cost_explorer.json
 }

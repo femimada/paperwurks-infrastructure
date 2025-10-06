@@ -86,7 +86,7 @@ variable "skip_final_snapshot" {
 variable "engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "15.4"
+  default     = "15.8"
 }
 
 variable "enable_performance_insights" {
