@@ -52,6 +52,12 @@ data "aws_iam_policy_document" "ecr" {
       "ecr:DescribeImages",
       "ecr:DescribeRepositories",
       "ecr:ListImages"
+      "ecr:PutImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+      "ecr:DescribeRepositories",
+      "ecr:ListImages"
     ]
     resources = [
       aws_ecr_repository.paperwurks_backend.arn,
@@ -78,7 +84,7 @@ data "aws_iam_policy_document" "infra_management" {
     ]
     resources = ["*"]
   }
-  
+
   # ECS
   statement {
     effect = "Allow"
@@ -88,21 +94,21 @@ data "aws_iam_policy_document" "infra_management" {
     ]
     resources = ["*"]
   }
-  
+
   # RDS
   statement {
-    effect = "Allow"
-    actions = ["rds:*"]
+    effect    = "Allow"
+    actions   = ["rds:*"]
     resources = ["*"]
   }
-  
+
   # S3 (beyond terraform state)
   statement {
-    effect = "Allow"
-    actions = ["s3:*"]
+    effect    = "Allow"
+    actions   = ["s3:*"]
     resources = ["*"]
   }
-  
+
   # IAM (for creating service roles)
   statement {
     effect = "Allow"
@@ -130,25 +136,25 @@ data "aws_iam_policy_document" "infra_management" {
     ]
     resources = ["*"]
   }
-  
+
   # Secrets Manager
   statement {
-    effect = "Allow"
-    actions = ["secretsmanager:*"]
+    effect    = "Allow"
+    actions   = ["secretsmanager:*"]
     resources = ["*"]
   }
-  
+
   # KMS
   statement {
-    effect = "Allow"
-    actions = ["kms:*"]
+    effect    = "Allow"
+    actions   = ["kms:*"]
     resources = ["*"]
   }
-  
+
   # CloudWatch Logs
   statement {
-    effect = "Allow"
-    actions = ["logs:*"]
+    effect    = "Allow"
+    actions   = ["logs:*"]
     resources = ["*"]
   }
 }
@@ -157,9 +163,4 @@ resource "aws_iam_policy" "infra_management" {
   name        = "infra-management-policy"
   description = "Full infrastructure management permissions for Terraform"
   policy      = data.aws_iam_policy_document.infra_management.json
-}
-
-
-data "aws_ecr_lifecycle_policy_document" "ecr_policy_document" {
-  
 }
