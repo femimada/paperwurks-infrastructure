@@ -27,13 +27,8 @@ resource "aws_iam_role" "infra_role" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = [
-              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main",
-              "repo:femimada/paperwurks-infrastructure:ref:refs/heads/release"
-            ]
+            "token.actions.githubusercontent.com:sub" = "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main"
+
           }
         }
       }
@@ -47,6 +42,10 @@ resource "aws_iam_role_policy_attachment" "infra_tf_backend" {
   policy_arn = aws_iam_policy.tf_backend.arn
 }
 
+resource "aws_iam_role_policy_attachment" "infra_management" {
+  role       = aws_iam_role.infra_role.name
+  policy_arn = aws_iam_policy.infra_management.arn
+}
 
 #######################################
 # Role 2: Deploy Role (app repo only)

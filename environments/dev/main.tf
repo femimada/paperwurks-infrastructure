@@ -50,58 +50,58 @@ module "networking" {
   nat_gateway_count  = var.environment == "prod" ? 2 : 1 
 }
 
-# # ECS Cluster and Services
-# module "compute" {
-#   source = "../../modules/compute"
+# ECS Cluster and Services
+module "compute" {
+  source = "../../modules/compute"
   
-#   project_name        = var.project_name
-#   environment         = var.environment
-#   vpc_id             = module.networking.vpc_id
-#   private_subnet_ids = module.networking.private_subnet_ids
-#   alb_sg_id          = module.networking.alb_security_group_id
-#   ecs_sg_id          = module.networking.ecs_security_group_id
-#   ecs_instance_type       = var.ecs_instance_type
-#   ecs_min_size           = var.ecs_min_size
-#   ecs_max_size           = var.ecs_max_size
-#   ecs_desired_capacity   = var.ecs_desired_capacity
-# }
+  project_name        = var.project_name
+  environment         = var.environment
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  alb_sg_id          = module.networking.alb_security_group_id
+  ecs_sg_id          = module.networking.ecs_security_group_id
+  ecs_instance_type       = var.ecs_instance_type
+  ecs_min_size           = var.ecs_min_size
+  ecs_max_size           = var.ecs_max_size
+  ecs_desired_capacity   = var.ecs_desired_capacity
+}
 
-# # RDS Database
-# module "database" {
-#   source = "../../modules/database"
+# RDS Database
+module "database" {
+  source = "../../modules/database"
   
-#   project_name         = var.project_name
-#   environment          = var.environment
-#   database_subnet_ids  = module.networking.database_subnet_ids
-#   rds_security_group_id = module.networking.rds_security_group_id
-#   db_instance_class    = var.db_instance_class
-#   db_allocated_storage = var.db_allocated_storage
-#   db_name             = var.db_name
-#   db_username         = var.db_username
-#   multi_az            = var.environment == "prod" ? true : false 
-#   backup_retention    = var.environment == "prod" ? 30 : 7
-# }
+  project_name         = var.project_name
+  environment          = var.environment
+  database_subnet_ids  = module.networking.database_subnet_ids
+  rds_security_group_id = module.networking.rds_security_group_id
+  db_instance_class    = var.db_instance_class
+  db_allocated_storage = var.db_allocated_storage
+  db_name             = var.db_name
+  db_username         = var.db_username
+  multi_az            = var.environment == "prod" ? true : false 
+  backup_retention    = var.environment == "prod" ? 30 : 7
+}
 
-# # S3 Buckets
-# module "storage" {
-#   source = "../../modules/storage"
+# S3 Buckets
+module "storage" {
+  source = "../../modules/storage"
   
-#   project_name = var.project_name
-#   environment  = var.environment
-#   enable_versioning = true
-#   enable_encryption = true
-#   lifecycle_rules   = var.s3_lifecycle_rules
-# }
+  project_name = var.project_name
+  environment  = var.environment
+  enable_versioning = true
+  enable_encryption = true
+  lifecycle_rules   = var.s3_lifecycle_rules
+}
 
-# # Monitoring
-# module "monitoring" {
-#   source = "../../modules/monitoring"
+# Monitoring
+module "monitoring" {
+  source = "../../modules/monitoring"
   
-#   project_name = var.project_name
-#   environment  = var.environment
-#   alert_email = var.alert_email
-#   slack_webhook_url = var.slack_webhook_url
-# }
+  project_name = var.project_name
+  environment  = var.environment
+  alert_email = var.alert_email
+  slack_webhook_url = var.slack_webhook_url
+}
 
 
 # -----------------------------------------------------------------------------
@@ -117,27 +117,45 @@ data "aws_iam_policy_document" "dev_ecs_deploy" {
     actions = [
       "ecs:DescribeServices",
       "ecs:UpdateService",
-      "ecs:DescribeTaskDefinition"
     ]
-    resources = [
+     resources = [
       module.compute.ecs_cluster_arn,
       module.compute.ecs_service_arn_backend,
-      module.compute.ecs_service_arn_worker, 
+      module.compute.ecs_service_arn_worker
+     ]
+  }
+
+    statement {
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
+      "ecs:ListTaskDefinitions"
     ]
+    resources = ["*"]
   }
 
   statement {
     effect = "Allow"
     actions = ["iam:PassRole"]
     resources = [
-      module.compute.task_execution_role_arn
+      module.compute.task_execution_role_arn,
+      module.compute.task_role_arn 
     ]
-    # Enforce that the role can only be passed to the ECS service
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["ecs.amazonaws.com"]
+      values   = ["ecs-tasks.amazonaws.com"]
     }
+  }
+
+   statement {
+    effect = "Allow"
+    actions = [
+      "logs:GetLogEvents",
+      "logs:DescribeLogStreams"
+    ]
+    resources = ["arn:aws:logs:${var.aws_region}:*:log-group:/ecs/*"]
   }
 }
 resource "aws_iam_policy" "dev_ecs_deploy_policy" {

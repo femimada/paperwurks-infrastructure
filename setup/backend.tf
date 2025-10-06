@@ -100,7 +100,6 @@ resource "aws_dynamodb_table" "terraform_state_lock" {
     Project     = var.project_name
     Environment = "Shared"
     Critical    = "true"
-    CreatedAt   = timestamp()
 
   }
 }

@@ -46,7 +46,12 @@ data "aws_iam_policy_document" "ecr" {
       "ecr:UploadLayerPart",
       "ecr:InitiateLayerUpload",
       "ecr:BatchCheckLayerAvailability",
-      "ecr:PutImage"
+      "ecr:PutImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+      "ecr:DescribeRepositories",
+      "ecr:ListImages"
     ]
     resources = [
       aws_ecr_repository.paperwurks_backend.arn,
@@ -62,3 +67,99 @@ resource "aws_iam_policy" "ecr" {
   policy      = data.aws_iam_policy_document.ecr.json
 }
 
+
+data "aws_iam_policy_document" "infra_management" {
+  # VPC & Networking
+  statement {
+    effect = "Allow"
+    actions = [
+      "ec2:*",
+      "elasticloadbalancing:*"
+    ]
+    resources = ["*"]
+  }
+  
+  # ECS
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecs:*",
+      "autoscaling:*"
+    ]
+    resources = ["*"]
+  }
+  
+  # RDS
+  statement {
+    effect = "Allow"
+    actions = ["rds:*"]
+    resources = ["*"]
+  }
+  
+  # S3 (beyond terraform state)
+  statement {
+    effect = "Allow"
+    actions = ["s3:*"]
+    resources = ["*"]
+  }
+  
+  # IAM (for creating service roles)
+  statement {
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:GetRole",
+      "iam:PassRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:TagRole",
+      "iam:UntagRole"
+    ]
+    resources = ["*"]
+  }
+  
+  # Secrets Manager
+  statement {
+    effect = "Allow"
+    actions = ["secretsmanager:*"]
+    resources = ["*"]
+  }
+  
+  # KMS
+  statement {
+    effect = "Allow"
+    actions = ["kms:*"]
+    resources = ["*"]
+  }
+  
+  # CloudWatch Logs
+  statement {
+    effect = "Allow"
+    actions = ["logs:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "infra_management" {
+  name        = "infra-management-policy"
+  description = "Full infrastructure management permissions for Terraform"
+  policy      = data.aws_iam_policy_document.infra_management.json
+}
+
+
+data "aws_ecr_lifecycle_policy_document" "ecr_policy_document" {
+  
+}
