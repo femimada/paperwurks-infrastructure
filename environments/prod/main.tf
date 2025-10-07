@@ -62,12 +62,12 @@ module "compute" {
   ecs_sg_id          = module.networking.ecs_security_group_id
 
   # Fargate task sizing
-  backend_cpu            = var.backend_cpu
-  backend_memory         = var.backend_memory
-  worker_cpu             = var.worker_cpu
-  worker_memory          = var.worker_memory
-  backend_desired_count  = var.backend_desired_count
-  worker_desired_count   = var.worker_desired_count
+  backend_cpu           = var.backend_cpu
+  backend_memory        = var.backend_memory
+  worker_cpu            = var.worker_cpu
+  worker_memory         = var.worker_memory
+  backend_desired_count = var.backend_desired_count
+  worker_desired_count  = var.worker_desired_count
 
   # Container images (will be updated by CI/CD)
   backend_image = var.backend_image

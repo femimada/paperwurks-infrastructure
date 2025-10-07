@@ -111,7 +111,7 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.environment}-${var.project_name}-backend"
-  network_mode             = "awsvpc" # CHANGED: Required for Fargate
+  network_mode             = "awsvpc"    # CHANGED: Required for Fargate
   requires_compatibilities = ["FARGATE"] # CHANGED: From EC2
   cpu                      = var.backend_cpu
   memory                   = var.backend_memory
@@ -171,7 +171,7 @@ resource "aws_ecs_task_definition" "backend" {
 
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.environment}-${var.project_name}-worker"
-  network_mode             = "awsvpc" # CHANGED: Required for Fargate
+  network_mode             = "awsvpc"    # CHANGED: Required for Fargate
   requires_compatibilities = ["FARGATE"] # CHANGED: From EC2
   cpu                      = var.worker_cpu
   memory                   = var.worker_memory

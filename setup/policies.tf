@@ -170,16 +170,16 @@ data "aws_iam_policy_document" "infra_management" {
       "iam:ListRolePolicies",
       "iam:TagRole",
       "iam:UntagRole",
-      "iam:TagPolicy",                        
-      "iam:UntagPolicy",                      
-      "iam:CreateInstanceProfile",            
-      "iam:DeleteInstanceProfile",            
-      "iam:GetInstanceProfile",               
-      "iam:AddRoleToInstanceProfile",         
-      "iam:RemoveRoleFromInstanceProfile",    
-      "iam:ListInstanceProfilesForRole",      
-      "iam:CreateServiceLinkedRole",          
-      "iam:DeleteServiceLinkedRole"           
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:ListInstanceProfilesForRole",
+      "iam:CreateServiceLinkedRole",
+      "iam:DeleteServiceLinkedRole"
     ]
     resources = ["*"]
   }

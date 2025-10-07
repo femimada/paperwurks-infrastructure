@@ -72,37 +72,37 @@ variable "availability_zones" {
 variable "backend_cpu" {
   description = "CPU units for backend Fargate task"
   type        = number
-  default     = 1024  # 1 vCPU for production
+  default     = 1024 # 1 vCPU for production
 }
 
 variable "backend_memory" {
   description = "Memory for backend Fargate task in MB"
   type        = number
-  default     = 2048  # 2 GB for production
+  default     = 2048 # 2 GB for production
 }
 
 variable "worker_cpu" {
   description = "CPU units for worker Fargate task"
   type        = number
-  default     = 512  # 0.5 vCPU for production workers
+  default     = 512 # 0.5 vCPU for production workers
 }
 
 variable "worker_memory" {
   description = "Memory for worker Fargate task in MB"
   type        = number
-  default     = 1024  # 1 GB for production workers
+  default     = 1024 # 1 GB for production workers
 }
 
 variable "backend_desired_count" {
   description = "Desired number of backend tasks"
   type        = number
-  default     = 2  # Minimum 2 for HA
+  default     = 2 # Minimum 2 for HA
 }
 
 variable "worker_desired_count" {
   description = "Desired number of worker tasks"
   type        = number
-  default     = 2  # 2 workers for production
+  default     = 2 # 2 workers for production
 }
 
 variable "backend_image" {
@@ -124,13 +124,13 @@ variable "worker_image" {
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.t3.medium"  # Larger for production
+  default     = "db.t3.medium" # Larger for production
 }
 
 variable "db_allocated_storage" {
   description = "Allocated storage in GB"
   type        = number
-  default     = 100  # 100 GB for production
+  default     = 100 # 100 GB for production
 }
 
 variable "db_name" {
@@ -153,7 +153,7 @@ variable "db_username" {
 variable "enable_versioning" {
   description = "Enable S3 versioning"
   type        = bool
-  default     = true  # Always enabled in production
+  default     = true # Always enabled in production
 }
 
 variable "s3_lifecycle_rules" {

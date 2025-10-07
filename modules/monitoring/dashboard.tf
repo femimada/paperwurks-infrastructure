@@ -61,7 +61,7 @@ resource "aws_cloudwatch_dashboard" "main" {
               ".",
               "RequestCount",
               {
-                stat = "Sum",
+                stat  = "Sum",
                 yAxis = "right"
               }
             ],
@@ -149,9 +149,9 @@ resource "aws_cloudwatch_dashboard" "main" {
               "AWS/S3",
               "BucketSizeBytes",
               {
-                stat         = "Average"
-                period       = 86400
-                StorageType  = "StandardStorage"
+                stat        = "Average"
+                period      = 86400
+                StorageType = "StandardStorage"
               }
             ],
             [

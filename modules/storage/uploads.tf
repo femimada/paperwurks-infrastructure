@@ -59,7 +59,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
     }
 
     filter {
-      prefix = ""  
+      prefix = ""
     }
 
     abort_incomplete_multipart_upload {
