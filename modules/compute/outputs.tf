@@ -78,17 +78,6 @@ output "alb_target_group_arn" {
   value       = aws_lb_target_group.backend.arn
 }
 
-# Auto Scaling Group Outputs
-output "asg_name" {
-  description = "Name of the Auto Scaling Group"
-  value       = aws_autoscaling_group.ecs.name
-}
-
-output "asg_arn" {
-  description = "ARN of the Auto Scaling Group"
-  value       = aws_autoscaling_group.ecs.arn
-}
-
 # Log Group Outputs
 output "backend_log_group_name" {
   description = "Name of the backend CloudWatch log group"
@@ -99,3 +88,4 @@ output "worker_log_group_name" {
   description = "Name of the worker CloudWatch log group"
   value       = aws_cloudwatch_log_group.worker.name
 }
+
