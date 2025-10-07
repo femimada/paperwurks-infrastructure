@@ -1,4 +1,3 @@
-
 resource "random_password" "master" {
   length           = 32
   special          = true
@@ -26,4 +25,7 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
     port     = aws_db_instance.main.port
     dbname   = var.db_name
   })
+
+
+  depends_on = [aws_db_instance.main]
 }

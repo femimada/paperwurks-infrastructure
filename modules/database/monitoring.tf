@@ -12,6 +12,9 @@ resource "aws_cloudwatch_log_group" "postgresql" {
     Name        = "${var.project_name}-${var.environment}-rds-logs"
     Environment = var.environment
   }
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 resource "aws_iam_role" "rds_monitoring" {
