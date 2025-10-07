@@ -1,4 +1,7 @@
-# Project Configuration
+# -----------------------------------------------------------------------------
+# Environment Configuration
+# -----------------------------------------------------------------------------
+
 variable "project_name" {
   description = "Name of the project"
   type        = string
@@ -24,50 +27,100 @@ variable "cost_center" {
 }
 
 variable "team" {
-  description = "Team responsible for resources"
+  description = "Team responsible"
   type        = string
   default     = "platform"
 }
 
+# -----------------------------------------------------------------------------
+# Alert Configuration
+# -----------------------------------------------------------------------------
+
+variable "alert_email" {
+  description = "Email for alerts"
+  type        = string
+  default     = "devops@paperwurks.com"
+}
+
+variable "slack_webhook_url" {
+  description = "Slack webhook URL for notifications"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# -----------------------------------------------------------------------------
 # Networking Configuration
+# -----------------------------------------------------------------------------
+
 variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
-  default     = "10.1.0.0/16" # Different from dev (10.0.0.0/16)
+  default     = "10.1.0.0/16"
 }
 
 variable "availability_zones" {
-  description = "Availability zones to use"
+  description = "Availability zones"
   type        = list(string)
   default     = ["eu-west-2a", "eu-west-2b"]
 }
 
-# Compute Configuration
-variable "ecs_instance_type" {
-  description = "Instance type for ECS cluster"
+# -----------------------------------------------------------------------------
+# Fargate Configuration
+# -----------------------------------------------------------------------------
+
+variable "backend_cpu" {
+  description = "CPU units for backend Fargate task"
+  type        = number
+  default     = 512
+}
+
+variable "backend_memory" {
+  description = "Memory for backend Fargate task in MB"
+  type        = number
+  default     = 1024
+}
+
+variable "worker_cpu" {
+  description = "CPU units for worker Fargate task"
+  type        = number
+  default     = 256
+}
+
+variable "worker_memory" {
+  description = "Memory for worker Fargate task in MB"
+  type        = number
+  default     = 512
+}
+
+variable "backend_desired_count" {
+  description = "Desired number of backend tasks"
+  type        = number
+  default     = 2
+}
+
+variable "worker_desired_count" {
+  description = "Desired number of worker tasks"
+  type        = number
+  default     = 1
+}
+
+variable "backend_image" {
+  description = "Backend container image"
   type        = string
-  default     = "t3.medium"
+  default     = "nginx:latest" # Placeholder - will be updated by CI/CD
 }
 
-variable "ecs_min_size" {
-  description = "Minimum number of ECS instances"
-  type        = number
-  default     = 1
+variable "worker_image" {
+  description = "Worker container image"
+  type        = string
+  default     = "nginx:latest" # Placeholder - will be updated by CI/CD
 }
 
-variable "ecs_max_size" {
-  description = "Maximum number of ECS instances"
-  type        = number
-  default     = 3
-}
-
-variable "ecs_desired_capacity" {
-  description = "Desired number of ECS instances"
-  type        = number
-  default     = 1
-}
-
+# -----------------------------------------------------------------------------
 # Database Configuration
+# -----------------------------------------------------------------------------
+
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
@@ -75,27 +128,36 @@ variable "db_instance_class" {
 }
 
 variable "db_allocated_storage" {
-  description = "Allocated storage for RDS in GB"
+  description = "Allocated storage in GB"
   type        = number
   default     = 20
 }
 
 variable "db_name" {
-  description = "Name of the database"
+  description = "Database name"
   type        = string
-  default     = "paperwurks"
+  default     = "paperwurks_staging"
 }
 
 variable "db_username" {
-  description = "Master username for database"
+  description = "Database master username"
   type        = string
   default     = "paperwurks_admin"
   sensitive   = true
 }
 
+# -----------------------------------------------------------------------------
 # Storage Configuration
+# -----------------------------------------------------------------------------
+
+variable "enable_versioning" {
+  description = "Enable S3 versioning"
+  type        = bool
+  default     = true
+}
+
 variable "s3_lifecycle_rules" {
-  description = "Lifecycle rules for S3 buckets"
+  description = "S3 lifecycle rules"
   type = list(object({
     id      = string
     enabled = bool
@@ -106,32 +168,14 @@ variable "s3_lifecycle_rules" {
   }))
   default = [
     {
-      id      = "archive-old-documents"
+      id      = "transition-to-ia"
       enabled = true
       transitions = [
         {
           days          = 90
           storage_class = "STANDARD_IA"
-        },
-        {
-          days          = 365
-          storage_class = "GLACIER"
         }
       ]
     }
   ]
-}
-
-# Monitoring Configuration
-variable "alert_email" {
-  description = "Email for alerts"
-  type        = string
-  default     = "devops@paperwurks.com"
-}
-
-variable "slack_webhook_url" {
-  description = "Slack webhook for notifications"
-  type        = string
-  default     = ""
-  sensitive   = true
 }

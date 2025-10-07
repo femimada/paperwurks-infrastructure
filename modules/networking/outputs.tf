@@ -1,44 +1,59 @@
+# VPC Outputs
 output "vpc_id" {
-  value       = aws_vpc.main.id
   description = "ID of the VPC"
+  value       = aws_vpc.main.id
 }
 
 output "vpc_cidr" {
-  value       = aws_vpc.main.cidr_block
   description = "CIDR block of the VPC"
+  value       = aws_vpc.main.cidr_block
 }
 
+# Subnet Outputs
 output "public_subnet_ids" {
+  description = "List of public subnet IDs"
   value       = aws_subnet.public[*].id
-  description = "IDs of public subnets"
 }
 
 output "private_subnet_ids" {
+  description = "List of private subnet IDs"
   value       = aws_subnet.private[*].id
-  description = "IDs of private subnets"
 }
 
 output "database_subnet_ids" {
+  description = "List of database subnet IDs"
   value       = aws_subnet.database[*].id
-  description = "IDs of database subnets"
 }
 
-output "alb_security_group_id" {
-  value       = aws_security_group.alb.id
-  description = "Security group ID for ALB"
+# Internet Gateway
+output "internet_gateway_id" {
+  description = "ID of the Internet Gateway"
+  value       = aws_internet_gateway.main.id
 }
 
-output "ecs_security_group_id" {
-  value       = aws_security_group.ecs.id
-  description = "Security group ID for ECS tasks"
-}
-
-output "rds_security_group_id" {
-  value       = aws_security_group.rds.id
-  description = "Security group ID for RDS"
+# NAT Gateway Outputs
+output "nat_gateway_ids" {
+  description = "List of NAT Gateway IDs"
+  value       = aws_nat_gateway.main[*].id
 }
 
 output "nat_gateway_public_ips" {
+  description = "List of public IPs assigned to NAT Gateways"
   value       = aws_eip.nat[*].public_ip
-  description = "Public IPs of NAT Gateways for IP whitelisting"
+}
+
+# Security Group Outputs
+output "alb_security_group_id" {
+  description = "ID of the ALB security group"
+  value       = aws_security_group.alb.id
+}
+
+output "ecs_security_group_id" {
+  description = "ID of the ECS security group"
+  value       = aws_security_group.ecs.id
+}
+
+output "rds_security_group_id" {
+  description = "ID of the RDS security group"
+  value       = aws_security_group.rds.id
 }

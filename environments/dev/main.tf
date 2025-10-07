@@ -46,25 +46,32 @@ module "networking" {
   aws_region         = var.aws_region
   vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
-  # Conditional logic: 1 NAT GW for dev/staging, 2 for prod
-  nat_gateway_count = var.environment == "prod" ? 2 : 1
+  nat_gateway_count  = 1 # Single NAT for dev
 }
 
-# ECS Cluster and Services
+# ECS Fargate Cluster and Services
 module "compute" {
   source = "../../modules/compute"
 
-  project_name         = var.project_name
-  environment          = var.environment
-  vpc_id               = module.networking.vpc_id
-  private_subnet_ids   = module.networking.private_subnet_ids
-  public_subnet_ids    = module.networking.public_subnet_ids
-  alb_sg_id            = module.networking.alb_security_group_id
-  ecs_sg_id            = module.networking.ecs_security_group_id
-  ecs_instance_type    = var.ecs_instance_type
-  ecs_min_size         = var.ecs_min_size
-  ecs_max_size         = var.ecs_max_size
-  ecs_desired_capacity = var.ecs_desired_capacity
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  public_subnet_ids  = module.networking.public_subnet_ids
+  alb_sg_id          = module.networking.alb_security_group_id
+  ecs_sg_id          = module.networking.ecs_security_group_id
+
+  # Fargate task sizing
+  backend_cpu            = var.backend_cpu
+  backend_memory         = var.backend_memory
+  worker_cpu             = var.worker_cpu
+  worker_memory          = var.worker_memory
+  backend_desired_count  = var.backend_desired_count
+  worker_desired_count   = var.worker_desired_count
+
+  # Container images (will be updated by CI/CD)
+  backend_image = var.backend_image
+  worker_image  = var.worker_image
 }
 
 # RDS Database
@@ -79,108 +86,25 @@ module "database" {
   db_allocated_storage  = var.db_allocated_storage
   db_name               = var.db_name
   db_username           = var.db_username
-  multi_az              = var.environment == "prod" ? true : false
-  backup_retention      = var.environment == "prod" ? 30 : 7
+  multi_az              = false # Single-AZ for dev
+  backup_retention      = 7     # 7 days for dev
 }
 
-# S3 Buckets
+# S3 Storage
 module "storage" {
   source = "../../modules/storage"
 
   project_name      = var.project_name
   environment       = var.environment
-  enable_versioning = true
+  enable_versioning = var.enable_versioning
   enable_encryption = true
-  lifecycle_rules   = var.s3_lifecycle_rules
-  force_destroy     = var.environment != "prod" # Allow deletion in dev/staging
 }
 
 # Monitoring
 module "monitoring" {
   source = "../../modules/monitoring"
 
-  project_name               = var.project_name
-  environment                = var.environment
-  alert_email                = var.alert_email
-  slack_webhook_url          = var.slack_webhook_url
-  log_retention_days         = var.environment == "prod" ? 30 : 7
-  enable_detailed_monitoring = var.environment == "prod"
-  cpu_threshold_percent      = var.environment == "prod" ? 80 : 90
-  memory_threshold_percent   = var.environment == "prod" ? 80 : 90
-  error_rate_threshold       = var.environment == "prod" ? 10 : 20
-}
-
-
-# -----------------------------------------------------------------------------
-# IAM SCOPING: Grant Deploy Role access to Dev ECS Resources
-# -----------------------------------------------------------------------------
-
-data "aws_iam_role" "deploy_role" {
-  name = "${var.project_name}-deploy-role"
-}
-
-
-data "aws_iam_policy_document" "dev_ecs_deploy" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "ecs:UpdateService",
-      "ecs:DescribeServices"
-    ]
-    resources = [
-      "arn:aws:ecs:${var.aws_region}:*:service/dev-*/*",
-      module.compute.ecs_cluster_arn
-    ]
-  }
-
-  statement {
-    effect    = "Allow"
-    actions   = ["ecs:RegisterTaskDefinition"]
-    resources = ["*"]
-  }
-
-  statement {
-    effect  = "Allow"
-    actions = ["iam:PassRole"]
-    resources = [
-      module.compute.task_execution_role_arn,
-      module.compute.task_role_arn
-    ]
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
-    }
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "logs:GetLogEvents",
-      "logs:DescribeLogStreams"
-    ]
-    resources = ["arn:aws:logs:${var.aws_region}:*:log-group:/ecs/dev-*"]
-  }
-
-  # ADD: SSM parameter access for secrets
-  statement {
-    effect = "Allow"
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters"
-    ]
-    resources = ["arn:aws:ssm:${var.aws_region}:*:parameter/paperwurks/dev/*"]
-  }
-}
-
-# Keep the policy and attachment
-resource "aws_iam_policy" "dev_ecs_deploy_policy" {
-  name        = "${var.project_name}-${var.environment}-ecs-deploy-policy"
-  description = "Allows CI/CD to deploy to the ${var.environment} ECS service."
-  policy      = data.aws_iam_policy_document.dev_ecs_deploy.json
-}
-
-resource "aws_iam_role_policy_attachment" "deploy_role_dev_ecs" {
-  role       = data.aws_iam_role.deploy_role.name
-  policy_arn = aws_iam_policy.dev_ecs_deploy_policy.arn
+  project_name = var.project_name
+  environment  = var.environment
+  alert_email  = var.alert_email
 }

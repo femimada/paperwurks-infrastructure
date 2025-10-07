@@ -46,25 +46,32 @@ module "networking" {
   aws_region         = var.aws_region
   vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
-  # Conditional logic: 2 NAT GWs for prod (high availability)
-  nat_gateway_count = 2
+  nat_gateway_count  = 2 # Two NAT Gateways for production HA
 }
 
-# ECS Cluster and Services
+# ECS Fargate Cluster and Services
 module "compute" {
   source = "../../modules/compute"
 
-  project_name         = var.project_name
-  environment          = var.environment
-  vpc_id               = module.networking.vpc_id
-  private_subnet_ids   = module.networking.private_subnet_ids
-  public_subnet_ids    = module.networking.public_subnet_ids
-  alb_sg_id            = module.networking.alb_security_group_id
-  ecs_sg_id            = module.networking.ecs_security_group_id
-  ecs_instance_type    = var.ecs_instance_type
-  ecs_min_size         = var.ecs_min_size
-  ecs_max_size         = var.ecs_max_size
-  ecs_desired_capacity = var.ecs_desired_capacity
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  public_subnet_ids  = module.networking.public_subnet_ids
+  alb_sg_id          = module.networking.alb_security_group_id
+  ecs_sg_id          = module.networking.ecs_security_group_id
+
+  # Fargate task sizing
+  backend_cpu            = var.backend_cpu
+  backend_memory         = var.backend_memory
+  worker_cpu             = var.worker_cpu
+  worker_memory          = var.worker_memory
+  backend_desired_count  = var.backend_desired_count
+  worker_desired_count   = var.worker_desired_count
+
+  # Container images (will be updated by CI/CD)
+  backend_image = var.backend_image
+  worker_image  = var.worker_image
 }
 
 # RDS Database - Multi-AZ for Production
@@ -79,17 +86,17 @@ module "database" {
   db_allocated_storage  = var.db_allocated_storage
   db_name               = var.db_name
   db_username           = var.db_username
-  multi_az              = true # High availability for production
+  multi_az              = true # Multi-AZ for production HA
   backup_retention      = 30   # 30 days for production
 }
 
-# S3 Buckets with enhanced lifecycle for production
+# S3 Storage with enhanced lifecycle for production
 module "storage" {
   source = "../../modules/storage"
 
   project_name      = var.project_name
   environment       = var.environment
-  enable_versioning = true
+  enable_versioning = var.enable_versioning
   enable_encryption = true
   lifecycle_rules   = var.s3_lifecycle_rules
 }
@@ -103,7 +110,6 @@ module "monitoring" {
   alert_email       = var.alert_email
   slack_webhook_url = var.slack_webhook_url
 }
-
 
 # -----------------------------------------------------------------------------
 # IAM SCOPING: Grant Deploy Role access to Production ECS Resources
