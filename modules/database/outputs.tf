@@ -73,10 +73,10 @@ output "db_parameter_group_arn" {
 
 
 
-output "cloudwatch_log_group_name" {
-  description = "Name of the CloudWatch log group for RDS logs"
-  value       = aws_cloudwatch_log_group.postgresql.name
-}
+# output "cloudwatch_log_group_name" {
+#   description = "Name of the CloudWatch log group for RDS logs"
+#   value       = aws_cloudwatch_log_group.postgresql.name
+# }
 
 output "monitoring_role_arn" {
   description = "ARN of the enhanced monitoring IAM role"

@@ -4,18 +4,18 @@ data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
 
-resource "aws_cloudwatch_log_group" "postgresql" {
-  name              = "/aws/rds/instance/${var.project_name}-${var.environment}-db/postgresql"
-  retention_in_days = var.environment == "prod" ? 30 : 7
+# resource "aws_cloudwatch_log_group" "postgresql" {
+#   name              = "/aws/rds/instance/${var.project_name}-${var.environment}-db/postgresql"
+#   retention_in_days = var.environment == "prod" ? 30 : 7
 
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-rds-logs"
-    Environment = var.environment
-  }
-  lifecycle {
-    ignore_changes = [name]
-  }
-}
+#   tags = {
+#     Name        = "${var.project_name}-${var.environment}-rds-logs"
+#     Environment = var.environment
+#   }
+#   lifecycle {
+#     ignore_changes = [name]
+#   }
+# }
 
 resource "aws_iam_role" "rds_monitoring" {
   count = var.environment == "prod" ? 1 : 0
