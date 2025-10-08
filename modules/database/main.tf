@@ -61,6 +61,8 @@ resource "aws_db_instance" "main" {
 
     ]
   }
+
+  depends_on = [ aws_cloudwatch_log_group.postgresql ]
 }
 
 resource "aws_db_parameter_group" "main" {
