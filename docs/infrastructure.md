@@ -2,14 +2,30 @@
 
 ## Document Information
 
-- **Version:** 1.0.0
-- **Last Updated:** January 2025
-- **Status:** Approved for Implementation
-- **Target Sprints:** Sprint 0-1 (Foundation), Sprint 3-5 (OSAE Components)
+- **Version:** 1.1.0
+- **Last Updated:** October 2025
+- **Status:** Deployed (Dev), In Progress (Staging/Prod)
+- **Architecture:** AWS Fargate-based Serverless Containers
+- **Target Sprints:** Sprint 0-1 (Foundation)
+
+## Version History
+
+| Version | Date         | Changes                                                |
+| ------- | ------------ | ------------------------------------------------------ |
+| 1.0.0   | January 2025 | Initial design with EC2-based ECS                      |
+| 1.1.0   | October 2025 | **BREAKING**: Migrated to AWS Fargate, removed EC2/ASG |
 
 ## Executive Summary
 
-This document defines two infrastructure architectures for Paperwurks: a managed services approach using AWS Bedrock, and a self-hosted approach with custom ML infrastructure. Both designs support the same business requirements but differ in operational complexity and cost structure.
+This document defines the **AWS Fargate-based infrastructure** for Paperwurks. The architecture uses fully managed services to minimize operational overhead while maintaining scalability and cost-efficiency.
+
+**Key Architectural Decisions:**
+
+- **AWS Fargate** (serverless containers) - No EC2 management
+- **Managed Services** - RDS, S3, Secrets Manager, CloudWatch
+- **VPC Gateway Endpoints** - S3 cost optimization
+- **Multi-AZ Support** - Production high availability
+- **Infrastructure as Code** - 100% Terraform managed
 
 ## Business Requirements
 
@@ -23,17 +39,17 @@ This document defines two infrastructure architectures for Paperwurks: a managed
 
 ### Non-Functional Requirements
 
-- GDPR compliance with UK data residency
+- GDPR compliance with UK data residency (eu-west-2)
 - SOC 2 Type II compliance readiness
 - RPO: 1 hour, RTO: 4 hours
 - Multi-factor authentication support
 - End-to-end encryption for sensitive data
 
-## Architecture Option 1: AWS Bedrock-Powered Infrastructure
+---
 
-### Overview
+## Architecture Overview
 
-Leverages AWS managed services with Bedrock for AI capabilities, minimizing operational overhead.
+### High-Level Architecture
 
 ```mermaid
 graph TB
@@ -42,428 +58,441 @@ graph TB
         WAF[AWS WAF]
     end
 
-    subgraph "Application Layer"
+    subgraph "Public Subnets"
         ALB[Application Load Balancer]
-        ECS_API[ECS Fargate - API]
-        ECS_WORKER[ECS Fargate - Workers]
+        NAT[NAT Gateway]
     end
 
-    subgraph "AI Layer - Managed"
-        BEDROCK[AWS Bedrock]
-        KB[Knowledge Bases]
-        AGENTS[Bedrock Agents]
+    subgraph "Private Subnets - Fargate Tasks"
+        BACKEND[Backend API Tasks<br/>Fargate 0.5vCPU/1GB]
+        WORKER[Worker Tasks<br/>Fargate 0.25vCPU/512MB]
+    end
+
+    subgraph "Database Subnets"
+        RDS[(RDS PostgreSQL<br/>db.t3.small)]
     end
 
     subgraph "Data Layer"
-        RDS[(RDS PostgreSQL)]
-        S3[(S3 Buckets)]
-        REDIS[(ElastiCache Redis)]
+        S3[(S3 Buckets<br/>Documents/Uploads)]
+        SECRETS[Secrets Manager]
     end
 
-    subgraph "Integration"
-        SQS[SQS Queues]
-        EventBridge[EventBridge]
-        SecretsMgr[Secrets Manager]
-    end
-
-    CF --> WAF
-    WAF --> ALB
-    ALB --> ECS_API
-    ECS_API --> RDS
-    ECS_API --> S3
-    ECS_API --> REDIS
-    ECS_API --> SQS
-    SQS --> ECS_WORKER
-    ECS_WORKER --> BEDROCK
-    BEDROCK --> KB
-    BEDROCK --> AGENTS
-    ECS_WORKER --> EventBridge
+    Internet --> ALB
+    ALB --> BACKEND
+    BACKEND --> RDS
+    BACKEND --> S3
+    BACKEND --> SECRETS
+    WORKER --> RDS
+    WORKER --> S3
+    BACKEND --> NAT
+    NAT --> Internet
 ```
 
-### Component Specifications
+### Fargate Architecture Benefits
 
-#### Compute Resources
+| Aspect         | Fargate                | Previous EC2 Approach      |
+| -------------- | ---------------------- | -------------------------- |
+| **Management** | Fully managed          | Manual instance management |
+| **Scaling**    | Per-task, instant      | Per-instance, slower       |
+| **Patching**   | Automatic              | Manual OS updates          |
+| **Pricing**    | Pay per task-second    | Pay per instance-hour      |
+| **Cost (Dev)** | £20/month              | £25/month                  |
+| **Deployment** | Rolling, zero-downtime | Requires coordination      |
 
-| Component      | Specification     | Scaling                 | Sprint   |
-| -------------- | ----------------- | ----------------------- | -------- |
-| API Service    | Fargate 2vCPU/4GB | 2-10 tasks auto-scaling | Sprint 0 |
-| Worker Service | Fargate 4vCPU/8GB | 2-5 tasks queue-based   | Sprint 1 |
-| Scheduled Jobs | Lambda functions  | On-demand               | Sprint 2 |
+---
 
-#### Managed AI Services
+## Component Specifications
 
-| Service                 | Purpose               | Configuration                 | Sprint   |
-| ----------------------- | --------------------- | ----------------------------- | -------- |
-| Bedrock Knowledge Bases | RAG document store    | OpenSearch Serverless backend | Sprint 3 |
-| Bedrock Agents          | Risk & Legal analysis | Claude 3 Sonnet/Haiku         | Sprint 3 |
-| Bedrock Guardrails      | Output filtering      | Custom policies               | Sprint 3 |
+### Compute Resources (Fargate)
 
-#### Data Storage
+| Component       | CPU             | Memory  | Count | Scaling      | Environment |
+| --------------- | --------------- | ------- | ----- | ------------ | ----------- |
+| **Backend API** | 512 (0.5 vCPU)  | 1024 MB | 1-2   | Auto-scaling | Dev         |
+| **Backend API** | 512 (0.5 vCPU)  | 1024 MB | 2     | Auto-scaling | Staging     |
+| **Backend API** | 1024 (1 vCPU)   | 2048 MB | 2-4   | Auto-scaling | Prod        |
+| **Worker**      | 256 (0.25 vCPU) | 512 MB  | 1     | Queue-based  | Dev         |
+| **Worker**      | 256 (0.25 vCPU) | 512 MB  | 1     | Queue-based  | Staging     |
+| **Worker**      | 512 (0.5 vCPU)  | 1024 MB | 2     | Queue-based  | Prod        |
 
-| Component         | Specification                | Backup Strategy                  | Sprint   |
-| ----------------- | ---------------------------- | -------------------------------- | -------- |
-| RDS PostgreSQL    | db.t4g.large Multi-AZ        | Daily snapshots, 7-day retention | Sprint 0 |
-| S3 Documents      | Standard tier with lifecycle | Cross-region replication         | Sprint 0 |
-| ElastiCache Redis | cache.t4g.small              | Daily snapshots                  | Sprint 1 |
+**Network Mode**: `awsvpc` (each task gets dedicated ENI)  
+**Launch Type**: `FARGATE` (serverless)
 
-### Networking
+### Database Configuration
+
+| Environment | Instance Class | Storage | Multi-AZ | Backup Retention |
+| ----------- | -------------- | ------- | -------- | ---------------- |
+| Dev         | db.t3.small    | 20 GB   | No       | 7 days           |
+| Staging     | db.t3.small    | 20 GB   | No       | 7 days           |
+| Prod        | db.t3.medium   | 100 GB  | Yes      | 30 days          |
+
+**Engine**: PostgreSQL 15.8  
+**Storage Type**: gp3 (General Purpose SSD)  
+**Encryption**: AES-256 at rest, TLS in transit
+
+### Storage Configuration
+
+| Bucket                       | Purpose            | Versioning             | Lifecycle                            |
+| ---------------------------- | ------------------ | ---------------------- | ------------------------------------ |
+| `paperwurks-{env}-documents` | Property documents | Enabled (Staging/Prod) | 90d → IA, 365d → Glacier (Prod only) |
+| `paperwurks-{env}-uploads`   | Temporary uploads  | Disabled               | 7d expiration                        |
+
+**Access**: Private, pre-signed URLs  
+**Encryption**: SSE-S3 (AES-256)
+
+### Networking Architecture
 
 ```mermaid
 graph LR
     subgraph "VPC 10.0.0.0/16"
-        subgraph "Public Subnets"
+        subgraph "Public Subnets /24"
             ALB[Load Balancer]
             NAT[NAT Gateway]
         end
-        subgraph "Private Subnets"
-            ECS[ECS Tasks]
-            LAMBDA[Lambda Functions]
+        subgraph "Private Subnets /24"
+            FARGATE[Fargate Tasks]
         end
-        subgraph "Database Subnets"
-            RDS[RDS Instances]
-            REDIS[Redis Cluster]
+        subgraph "Database Subnets /24"
+            RDS[RDS PostgreSQL]
         end
     end
 
     Internet --> ALB
-    ECS --> NAT
+    ALB --> FARGATE
+    FARGATE --> NAT
     NAT --> Internet
-    ECS --> RDS
-    ECS --> REDIS
+    FARGATE --> RDS
+    FARGATE -.VPC Endpoint.-> S3
 ```
 
-### Cost Structure (Monthly)
+**Key Features**:
 
-| Component     | Cost Range   | Notes                             |
-| ------------- | ------------ | --------------------------------- |
-| Compute (ECS) | £200-300     | Includes Fargate Spot for workers |
-| Bedrock AI    | £100-200     | Pay per invocation                |
-| Database      | £150-200     | Multi-AZ deployment               |
-| Storage       | £50-100      | Including CDN                     |
-| Networking    | £100-150     | NAT Gateway, data transfer        |
-| **Total**     | **£600-950** | Scales linearly with usage        |
+- **VPC Gateway Endpoint for S3**: Eliminates NAT data transfer costs for S3 access
+- **Private Subnets**: Fargate tasks have no direct internet access
+- **NAT Gateway**: Single NAT for dev/staging, dual NAT for prod HA
+- **Security Groups**: Least-privilege network access
 
-### Deployment Pipeline
+### Cost Structure (Monthly Estimates)
 
-```mermaid
-graph LR
-    GH[GitHub] --> CB[CodeBuild]
-    CB --> TEST[Run Tests]
-    TEST --> BUILD[Build Container]
-    BUILD --> ECR[Push to ECR]
-    ECR --> STAGING[Deploy Staging]
-    STAGING --> PROD[Deploy Production]
+| Environment | Compute (Fargate) | Database | Storage | Networking | Total       |
+| ----------- | ----------------- | -------- | ------- | ---------- | ----------- |
+| **Dev**     | £20               | £25      | £5      | £15        | **£65**     |
+| **Staging** | £20               | £25      | £5      | £15        | **£65**     |
+| **Prod**    | £80               | £100     | £50     | £50        | **£280**    |
+| **Total**   | **£120**          | **£150** | **£60** | **£80**    | **£410/mo** |
 
-    CB --> NOTIFY[Slack Notification]
+**Cost Savings vs EC2 Approach**: ~20% (£100/month saved)
+
+---
+
+## Implementation Phases
+
+### Phase 1: Foundation (Sprint 0-1) - 90% COMPLETE
+
+**Status**: Deployed to Dev, In Progress
+
+- VPC and networking setup (3 subnet tiers)
+- Fargate cluster and services
+- Application Load Balancer (public subnets)
+- RDS PostgreSQL provisioning
+- S3 buckets with lifecycle policies
+- Secrets Manager integration
+- CloudWatch monitoring and alarms
+- VPC Gateway Endpoint for S3
+- CI/CD pipeline (in progress)
+
+**Remaining Work**:
+
+- Fix 3 failed resources in dev
+- Deploy to staging
+- Deploy to production
+- Implement CI/CD automation
+
+### Phase 2: Application Platform (Sprint 1-2) - NOT STARTED
+
+- Backend application deployment
+- Database migrations
+- Application health checks
+- Auto-scaling configuration
+- Cache layer (ElastiCache Redis)
+- Message queue (SQS)
+
+### Phase 3: AI Infrastructure (Sprint 3-4) - NOT STARTED
+
+- AWS Bedrock setup
+- Knowledge base creation
+- Model serving infrastructure
+- RAG pipeline implementation
+
+### Phase 4: Production Hardening (Sprint 5-6) - NOT STARTED
+
+- Security audit implementation
+- Disaster recovery testing
+- Performance optimization
+- Cost optimization review
+- Documentation completion
+
+---
+
+## Deployment Architecture
+
+### Fargate Service Configuration
+
+```hcl
+# Backend Service
+resource "aws_ecs_service" "backend" {
+  name            = "{env}-paperwurks-backend"
+  cluster         = aws_ecs_cluster.main.id
+  launch_type     = "FARGATE"
+  desired_count   = 1-2 (environment dependent)
+
+  network_configuration {
+    subnets          = private_subnet_ids
+    security_groups  = [ecs_security_group]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = backend_target_group
+    container_name   = "paperwurks-backend"
+    container_port   = 8000
+  }
+}
 ```
 
-## Architecture Option 2: Self-Hosted ML Infrastructure
+**Key Features**:
 
-### Overview
+- Rolling deployments with circuit breaker
+- Health check grace period: 60 seconds
+- Deregistration delay: 30 seconds
+- Target type: `ip` (required for Fargate awsvpc mode)
 
-Custom-built ML pipeline with self-managed vector database and model serving.
+### Security Architecture
 
-```mermaid
-graph TB
-    subgraph "Edge Layer"
-        CF[CloudFront CDN]
-        WAF[AWS WAF]
-    end
+**Network Security**:
 
-    subgraph "Application Layer"
-        ALB[Application Load Balancer]
-        EKS[EKS Cluster]
-        API_PODS[API Pods]
-        WORKER_PODS[Worker Pods]
-    end
-
-    subgraph "AI Layer - Self-Hosted"
-        ML_NODES[GPU Nodes - g5.xlarge]
-        QDRANT[Qdrant Vector DB]
-        MODELS[Model Servers]
-    end
-
-    subgraph "Data Layer"
-        RDS[(RDS PostgreSQL)]
-        S3[(S3 Buckets)]
-        REDIS[(ElastiCache Redis)]
-        OPENSEARCH[(OpenSearch)]
-    end
-
-    subgraph "Integration"
-        SQS[SQS Queues]
-        AIRFLOW[Apache Airflow]
-        SecretsMgr[Secrets Manager]
-    end
-
-    CF --> WAF
-    WAF --> ALB
-    ALB --> API_PODS
-    API_PODS --> RDS
-    API_PODS --> S3
-    API_PODS --> REDIS
-    API_PODS --> SQS
-    SQS --> WORKER_PODS
-    WORKER_PODS --> ML_NODES
-    ML_NODES --> MODELS
-    WORKER_PODS --> QDRANT
-    WORKER_PODS --> OPENSEARCH
-    AIRFLOW --> WORKER_PODS
+```
+Internet → WAF → ALB (public subnet)
+       → Fargate (private subnet)
+       → RDS (database subnet)
+       → S3 (via VPC endpoint)
 ```
 
-### Component Specifications
+**Security Groups**:
 
-#### Kubernetes Cluster
+- ALB SG: Allow 80/443 from 0.0.0.0/0
+- ECS SG: Allow 8000 from ALB SG only
+- RDS SG: Allow 5432 from ECS SG only
 
-| Component         | Specification   | Node Count       | Sprint   |
-| ----------------- | --------------- | ---------------- | -------- |
-| Control Plane     | EKS managed     | 3 (HA)           | Sprint 0 |
-| API Node Group    | t3.large        | 2-6 auto-scaling | Sprint 0 |
-| Worker Node Group | t3.xlarge       | 2-4 auto-scaling | Sprint 1 |
-| ML Node Group     | g5.xlarge (GPU) | 1-2 on-demand    | Sprint 3 |
+**Data Encryption**:
 
-#### Self-Hosted AI Stack
+- At Rest: KMS encryption for RDS, S3 SSE
+- In Transit: TLS 1.2+ for all connections
+- Secrets: AWS Secrets Manager with rotation
 
-| Service         | Technology            | Infrastructure     | Sprint   |
-| --------------- | --------------------- | ------------------ | -------- |
-| Vector Database | Qdrant                | 2x m5.xlarge pods  | Sprint 3 |
-| Search Engine   | OpenSearch            | 3-node cluster     | Sprint 3 |
-| Model Serving   | TorchServe/vLLM       | GPU nodes          | Sprint 4 |
-| Embeddings      | Sentence Transformers | CPU intensive pods | Sprint 3 |
-
-### Data Pipeline
-
-```mermaid
-graph LR
-    DOC[Document Upload] --> S3[S3 Storage]
-    S3 --> EXTRACT[Text Extraction]
-    EXTRACT --> CHUNK[Document Chunking]
-    CHUNK --> EMBED[Generate Embeddings]
-    EMBED --> QDRANT[Store in Qdrant]
-
-    QUERY[User Query] --> QEMBED[Query Embedding]
-    QEMBED --> SEARCH[Vector Search]
-    SEARCH --> RERANK[Re-ranking]
-    RERANK --> LLM[LLM Processing]
-    LLM --> RESPONSE[Response]
-```
-
-### Cost Structure (Monthly)
-
-| Component       | Cost Range       | Notes                 |
-| --------------- | ---------------- | --------------------- |
-| EKS Cluster     | £300-400         | Include node costs    |
-| GPU Instances   | £500-800         | g5.xlarge for ML      |
-| Vector DB Nodes | £200-300         | High memory instances |
-| OpenSearch      | £250-350         | 3-node cluster        |
-| Database        | £150-200         | Same as Option 1      |
-| Storage         | £50-100          | Same as Option 1      |
-| **Total**       | **£1,450-2,150** | Higher fixed costs    |
-
-## Infrastructure Comparison Matrix
-
-| Aspect                 | Bedrock Architecture | Self-Hosted Architecture | Recommendation |
-| ---------------------- | -------------------- | ------------------------ | -------------- |
-| Initial Setup Time     | 1-2 weeks            | 4-6 weeks                | Bedrock ✓      |
-| Operational Complexity | Low                  | High                     | Bedrock ✓      |
-| Monthly Cost (MVP)     | £600-950             | £1,450-2,150             | Bedrock ✓      |
-| Scalability            | Automatic            | Manual configuration     | Bedrock ✓      |
-| Customization          | Limited              | Full control             | Self-Hosted ✓  |
-| Vendor Lock-in         | High                 | Low                      | Self-Hosted ✓  |
-| ML Model Options       | AWS models only      | Any model                | Self-Hosted ✓  |
-| Maintenance Effort     | Minimal              | Significant              | Bedrock ✓      |
-
-## Security Architecture
-
-### Network Security
-
-```mermaid
-graph TB
-    subgraph "Internet"
-        USER[Users]
-        ATTACKER[Threats]
-    end
-
-    subgraph "AWS Security"
-        SHIELD[AWS Shield]
-        WAF[WAF Rules]
-        NACL[Network ACLs]
-        SG[Security Groups]
-    end
-
-    subgraph "Application Security"
-        AUTH[Authentication]
-        AUTHZ[Authorization]
-        ENCRYPT[Encryption]
-    end
-
-    USER --> SHIELD
-    ATTACKER --> SHIELD
-    SHIELD --> WAF
-    WAF --> NACL
-    NACL --> SG
-    SG --> AUTH
-    AUTH --> AUTHZ
-    AUTHZ --> ENCRYPT
-```
-
-### Production Network Topology
-
-```mermaid
-graph TB
-    subgraph "EU-WEST-2 (London)"
-        subgraph "VPC 10.0.0.0/16"
-            subgraph "AZ-1 (eu-west-2a)"
-                PS1[Public Subnet<br/>10.0.1.0/24]
-                PRS1[Private Subnet<br/>10.0.10.0/24]
-                DBS1[DB Subnet<br/>10.0.20.0/24]
-            end
-            subgraph "AZ-2 (eu-west-2b)"
-                PS2[Public Subnet<br/>10.0.2.0/24]
-                PRS2[Private Subnet<br/>10.0.11.0/24]
-                DBS2[DB Subnet<br/>10.0.21.0/24]
-            end
-        end
-    end
-
-    IGW[Internet Gateway] --> PS1
-    IGW --> PS2
-    PS1 --> NAT1[NAT Gateway]
-    PS2 --> NAT2[NAT Gateway]
-    NAT1 --> PRS1
-    NAT2 --> PRS2
-```
-
-### Security Controls
-
-| Layer       | Control               | Implementation          | Sprint   |
-| ----------- | --------------------- | ----------------------- | -------- |
-| Network     | DDoS Protection       | AWS Shield Standard     | Sprint 0 |
-| Network     | WAF                   | OWASP Top 10 rules      | Sprint 0 |
-| Application | Authentication        | JWT with refresh tokens | Sprint 1 |
-| Application | Authorization         | RBAC with Django        | Sprint 1 |
-| Data        | Encryption at Rest    | AES-256                 | Sprint 0 |
-| Data        | Encryption in Transit | TLS 1.3                 | Sprint 0 |
-| Audit       | Logging               | CloudWatch + CloudTrail | Sprint 0 |
+---
 
 ## Monitoring & Observability
 
-### Metrics Collection
+### CloudWatch Metrics
 
-```mermaid
-graph LR
-    subgraph "Application Metrics"
-        APP[Django App] --> CW[CloudWatch]
-        CELERY[Celery] --> CW
-    end
+**ECS Metrics**:
 
-    subgraph "Infrastructure Metrics"
-        ECS[ECS/EKS] --> CW
-        RDS[RDS] --> CW
-        S3[S3] --> CW
-    end
+- CPUUtilization (target: < 70%)
+- MemoryUtilization (target: < 70%)
+- Running task count
 
-    subgraph "Business Metrics"
-        CUSTOM[Custom Metrics] --> CW
-    end
+**ALB Metrics**:
 
-    CW --> ALARM[Alarms]
-    CW --> DASH[Dashboards]
-    ALARM --> SNS[SNS]
-    SNS --> SLACK[Slack]
-    SNS --> PAGER[PagerDuty]
-```
+- RequestCount
+- TargetResponseTime (target: < 500ms)
+- HTTPCode_Target_5XX_Count (alarm: > 10/min)
+- HealthyHostCount (alarm: < 1)
 
-### Key Performance Indicators
+**RDS Metrics**:
 
-| Metric                  | Target | Alert Threshold | Dashboard      |
-| ----------------------- | ------ | --------------- | -------------- |
-| API Latency P95         | <500ms | >1000ms         | Operations     |
-| Error Rate              | <0.1%  | >1%             | Operations     |
-| AI Processing Time      | <30s   | >60s            | OSAE           |
-| Document Upload Success | >99%   | <95%            | Business       |
-| Database CPU            | <60%   | >80%            | Infrastructure |
-| Cost per Property       | <£5    | >£10            | Finance        |
+- CPUUtilization (alarm: > 80%)
+- DatabaseConnections (alarm: > 80% max)
+- FreeStorageSpace (alarm: < 5GB)
+- FreeableMemory (alarm: < 256MB)
+
+### Alerting Strategy
+
+| Severity | Channel           | Response Time |
+| -------- | ----------------- | ------------- |
+| Critical | Email + PagerDuty | Immediate     |
+| Warning  | Email + Slack     | 1 hour        |
+| Info     | Slack only        | Best effort   |
+
+### Log Aggregation
+
+- Application logs: `/ecs/{env}-paperwurks-backend`
+- Worker logs: `/ecs/{env}-paperwurks-worker`
+- RDS logs: `/aws/rds/instance/{identifier}/postgresql`
+- Retention: 7 days (dev), 14 days (staging), 30 days (prod)
+
+---
 
 ## Disaster Recovery
 
 ### Backup Strategy
 
-| Component          | RPO      | RTO        | Method                 | Frequency  |
-| ------------------ | -------- | ---------- | ---------------------- | ---------- |
-| Database           | 1 hour   | 2 hours    | Automated snapshots    | Continuous |
-| Documents          | 0        | 1 hour     | S3 cross-region        | Real-time  |
-| Application Config | 24 hours | 30 minutes | Infrastructure as Code | Daily      |
-| Knowledge Bases    | 24 hours | 4 hours    | S3 backup              | Daily      |
+| Component          | Frequency          | Retention   | RPO       |
+| ------------------ | ------------------ | ----------- | --------- |
+| RDS Database       | Daily automated    | 7-30 days   | 24 hours  |
+| S3 Documents       | Versioning enabled | Permanent   | Real-time |
+| Application Config | IaC (Terraform)    | Git history | N/A       |
 
 ### Recovery Procedures
 
-```mermaid
-graph TB
-    INCIDENT[Incident Detected] --> ASSESS[Assess Impact]
-    ASSESS --> MINOR[Minor Issue]
-    ASSESS --> MAJOR[Major Outage]
+**RDS Failure**:
 
-    MINOR --> FIX[Apply Fix]
-    FIX --> VERIFY[Verify Resolution]
+1. Automatic failover to standby (Multi-AZ, prod only): ~60 seconds
+2. Point-in-time restore from backup: ~15 minutes
+3. RTO Target: 1 hour
 
-    MAJOR --> FAILOVER[Initiate Failover]
-    FAILOVER --> RESTORE[Restore from Backup]
-    RESTORE --> VALIDATE[Validate Services]
-    VALIDATE --> VERIFY
+**Fargate Task Failure**:
 
-    VERIFY --> REPORT[Post-Mortem Report]
-```
+1. ECS automatically replaces failed tasks
+2. Health checks detect issues within 30 seconds
+3. New tasks launched within 60 seconds
+4. RTO Target: 2 minutes
 
-## Implementation Phases
+**Complete Region Failure**:
 
-### Phase 1: Foundation (Sprint 0-1)
+1. Manual failover to DR region (if implemented)
+2. Restore RDS from snapshot
+3. Update DNS to DR ALB
+4. RTO Target: 4 hours
 
-- VPC and networking setup
-- Basic compute infrastructure
-- Database provisioning
-- CI/CD pipeline
-- Monitoring foundation
+---
 
-### Phase 2: Application Platform (Sprint 1-2)
-
-- ECS/EKS cluster setup
-- Load balancer configuration
-- Auto-scaling policies
-- Cache layer implementation
-- Message queue setup
-
-### Phase 3: AI Infrastructure (Sprint 3-4)
-
-- Bedrock setup OR Qdrant deployment
-- Knowledge base creation
-- Model serving infrastructure
-- RAG pipeline implementation
-
-### Phase 4: Production Hardening (Sprint 5-6)
-
-- Security audit implementation
-- Disaster recovery testing
-- Performance optimization
-- Cost optimization
-- Documentation completion
-
-## Appendix: Compliance Checklist
+## Compliance & Security
 
 ### GDPR Compliance
 
-- [ ] Data residency in UK/EU
-- [ ] Encryption at rest and in transit
-- [ ] Right to be forgotten implementation
-- [ ] Data portability features
-- [ ] Consent management
-- [ ] Audit trail for data access
+- Data residency in UK/EU (eu-west-2)
+- Encryption at rest and in transit
+- Right to be forgotten implementation (application layer)
+- Data portability features (application layer)
+- Audit trail for data access (CloudWatch logs)
 
 ### Security Compliance
 
-- [ ] SOC 2 Type II controls
-- [ ] Penetration testing scheduled
-- [ ] Vulnerability scanning automated
-- [ ] Security incident response plan
-- [ ] Business continuity plan
-- [ ] Regular security training
+- Infrastructure as Code (audit trail)
+- Secrets Manager (no hardcoded credentials)
+- VPC isolation (private subnets)
+- Security groups (least privilege)
+- Penetration testing (pending)
+- Vulnerability scanning (pending CI/CD integration)
+
+---
+
+## Known Issues & Limitations
+
+### Current Issues (October 2025)
+
+1. **RDS Log Group Auto-Creation**: RDS automatically creates CloudWatch log groups when `enabled_cloudwatch_logs_exports` is set. Terraform tries to manage this, causing conflicts. **Fix**: Import existing log group into state.
+
+2. **VPC Endpoint Deletion Order**: S3 VPC Gateway Endpoint blocks VPC deletion due to implicit route table dependencies. **Fix**: Add lifecycle rules or manual deletion before VPC destroy.
+
+3. **Secrets Manager Deletion**: Secrets have 7-30 day recovery window. **Fix**: Use `force-delete-without-recovery` for non-prod or wait for recovery period.
+
+### Limitations
+
+- **No Auto-Scaling**: Currently fixed task counts. Auto-scaling policies pending.
+- **Single NAT Gateway**: Dev/staging use single NAT (cost optimization). Production uses dual NAT for HA.
+- **No CDN**: CloudFront not yet configured for static assets.
+- **No WAF**: Web Application Firewall pending security review.
+
+---
+
+## Future Enhancements
+
+### Short-term (Next Sprint)
+
+- CI/CD pipeline automation
+- Auto-scaling policies for Fargate tasks
+- ElastiCache Redis for session storage
+- SQS for background job queue
+
+### Medium-term (Next Quarter)
+
+- CloudFront CDN for static assets
+- AWS WAF with managed rule sets
+- X-Ray distributed tracing
+- Container Insights for detailed metrics
+
+### Long-term (6+ months)
+
+- Multi-region deployment for DR
+- AWS Bedrock integration for AI features
+- Blue/green deployment strategy
+- Cost optimization with Fargate Spot
+
+---
+
+## Appendices
+
+### A. Terraform Module Structure
+
+```
+infrastructure/
+├── setup/              # Shared resources (IAM, ECR, S3 backend)
+├── modules/
+│   ├── networking/     # VPC, subnets, security groups
+│   ├── compute/        # Fargate cluster, services, ALB
+│   ├── database/       # RDS, parameter groups, secrets
+│   ├── storage/        # S3 buckets, policies
+│   └── monitoring/     # CloudWatch, SNS, dashboards
+└── environments/
+    ├── dev/           # Development environment
+    ├── staging/       # Staging environment
+    └── prod/          # Production environment
+```
+
+### B. Valid Fargate CPU/Memory Combinations
+
+| CPU (vCPU) | Valid Memory (MB)                        |
+| ---------- | ---------------------------------------- |
+| 256 (.25)  | 512, 1024, 2048                          |
+| 512 (.5)   | 1024, 2048, 3072, 4096                   |
+| 1024 (1)   | 2048, 3072, 4096, 5120, 6144, 7168, 8192 |
+| 2048 (2)   | 4096-16384 (1024 MB increments)          |
+| 4096 (4)   | 8192-30720 (1024 MB increments)          |
+
+### C. Useful Commands
+
+```bash
+# Check Fargate task status
+aws ecs list-tasks --cluster paperwurks-dev-cluster
+
+# View task logs
+aws logs tail /ecs/dev-paperwurks-backend --follow
+
+# Check ALB target health
+aws elbv2 describe-target-health --target-group-arn <arn>
+
+# Force delete scheduled secret
+aws secretsmanager delete-secret \
+  --secret-id paperwurks/dev/database/master-credentials \
+  --force-delete-without-recovery
+
+# Import existing log group
+terraform import 'module.database.aws_cloudwatch_log_group.postgresql' \
+  '/aws/rds/instance/paperwurks-dev-db/postgresql'
+```
+
+---
+
+## Contact & Support
+
+- **Infrastructure Issues**: #infrastructure Slack channel
+- **On-Call**: PagerDuty escalation
+- **Documentation**: This file + module READMEs
+- **Runbooks**: `/docs/runbooks/` (pending)
+
+---
+
+**Document Maintained By**: DevOps Team  
+**Review Frequency**: Monthly or after major changes  
+**Next Review**: November 2025
