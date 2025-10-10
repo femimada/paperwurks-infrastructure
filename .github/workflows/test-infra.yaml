@@ -1,0 +1,631 @@
+name: Scheduled Infrastructure Test & Validation
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      environments:
+        type: choice
+        description: "Which environments to test"
+        options:
+          - all
+          - dev
+          - staging
+          - production
+        default: "all"
+      create_if_missing:
+        type: boolean
+        description: "Create environment if missing (and destroy after)"
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  test-nonprod:
+    name: Test ${{ matrix.env }} Environment
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, staging]
+    if: github.event_name == 'schedule' || github.event.inputs.environments == 'all' || contains(github.event.inputs.environments, matrix.env)
+    environment: ${{ matrix.env }}
+    outputs:
+      status: ${{ steps.summary.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Check if Environment Exists
+        id: check-env
+        run: |
+          CLUSTER="${{ matrix.env }}-paperwurks-cluster"
+          if aws ecs describe-clusters --clusters $CLUSTER --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine if Creating
+        if: steps.check-env.outputs.exists != 'true' && github.event_name != 'schedule' && github.event.inputs.create_if_missing == 'true'
+        run: echo "creating=true" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Cache Terraform
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        uses: actions/cache@v4
+        with:
+          path: environments/${{ matrix.env }}/.terraform
+          key: terraform-${{ matrix.env }}-${{ hashFiles('environments/${{ matrix.env }}/versions.tf') }}
+
+      - name: Terraform Init
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: terraform init
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Create Environment if Missing
+        if: env.creating == 'true'
+        run: |
+          terraform apply -auto-approve -no-color
+          echo "created=true" >> $GITHUB_ENV
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Terraform Plan
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        id: plan
+        run: |
+          terraform plan -detailed-exitcode -no-color
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        working-directory: environments/${{ matrix.env }}
+        continue-on-error: true
+
+      - name: Check for Drift
+        if: (env.creating == 'true' || steps.check-env.outputs.exists == 'true') && steps.plan.outputs.exit_code == '2'
+        run: echo "drift_detected=true" >> $GITHUB_ENV
+
+      - name: Check Networking
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Networking Layer"
+          NAT_COUNT=$(terraform output -json nat_gateway_public_ips | jq -r 'length')
+          if [ "$NAT_COUNT" -lt 1 ]; then
+            echo "Failed: No NAT Gateways found"
+            echo "networking_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Check Compute
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Compute Layer"
+          CLUSTER="${{ matrix.env }}-paperwurks-cluster"
+          SERVICE="${{ matrix.env }}-paperwurks-backend"
+          CLUSTER_STATUS=$(aws ecs describe-clusters --clusters $CLUSTER --query 'clusters[0].status' --output text)
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "Failed: Cluster status $CLUSTER_STATUS"
+            echo "compute_error=true" >> $GITHUB_ENV
+          fi
+          RUNNING=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE --query 'services[0].runningCount' --output text)
+          DESIRED=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE --query 'services[0].desiredCount' --output text)
+          if [ "$RUNNING" -lt "$DESIRED" ]; then
+            echo "Warning: Tasks $RUNNING/$DESIRED running"
+            echo "tasks_warning=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Check Database
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Database Layer"
+          DB_STATUS=$(aws rds describe-db-instances --db-instance-identifier paperwurks-${{ matrix.env }}-db --query 'DBInstances[0].DBInstanceStatus' --output text)
+          if [ "$DB_STATUS" != "available" ]; then
+            echo "Failed: Database status $DB_STATUS"
+            echo "db_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Check Storage
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Storage Layer"
+          for BUCKET in $(terraform output -raw documents_bucket_name) $(terraform output -raw uploads_bucket_name); do
+            if ! aws s3 ls s3://$BUCKET > /dev/null 2>&1; then
+              echo "Failed: Bucket $BUCKET not accessible"
+              echo "storage_error=true" >> $GITHUB_ENV
+            fi
+          done
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Check Monitoring
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Monitoring Layer"
+          LOG_GROUP=$(terraform output -raw application_log_group)
+          if ! aws logs describe-log-groups --log-group-name-prefix $LOG_GROUP > /dev/null 2>&1; then
+            echo "Failed: Log group $LOG_GROUP not found"
+            echo "monitoring_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Check ALB Health
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::ALB Health Check"
+          ALB_DNS=$(terraform output -raw alb_dns_name)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://$ALB_DNS/health || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Warning: Health check returned $HTTP_CODE (backend may not be deployed)"
+            echo "health_warning=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/${{ matrix.env }}
+
+      - name: Test Summary
+        id: summary
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          if [ -n "$db_error" ] || [ -n "$storage_error" ] || [ -n "$monitoring_error" ] || [ -n "$compute_error" ] || [ -n "$networking_error" ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+          elif [ -n "$drift_detected" ] || [ -n "$tasks_warning" ] || [ -n "$health_warning" ]; then
+            echo "status=warning" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate Test Report
+        if: always()
+        run: |
+          if [ "${{ steps.check-env.outputs.exists }}" != "true" ] && [ -z "${{ env.creating }}" ]; then
+            cat << EOF > ${{ matrix.env }}-test-report.md
+          ## ${{ matrix.env | capitalize }} Environment Test Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** not_deployed
+
+          Environment not deployed yet.
+
+          To deploy:
+          \`\`\`bash
+          cd environments/${{ matrix.env }}
+          terraform init
+          terraform plan
+          terraform apply
+          \`\`\`
+          EOF
+          else
+            STATUS="${{ steps.summary.outputs.status || 'error' }}"
+            cat << EOF > ${{ matrix.env }}-test-report.md
+          ## ${{ matrix.env | capitalize }} Environment Test Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** $STATUS
+
+          ### Test Results
+
+          | Layer      | Status  |
+          |------------|---------|
+          | Networking | ${{ env.networking_error && 'Failed' || 'Passed' }} |
+          | Compute    | ${{ env.compute_error && 'Failed' || env.tasks_warning && 'Warning' || 'Passed' }} |
+          | Database   | ${{ env.db_error && 'Failed' || 'Passed' }} |
+          | Storage    | ${{ env.storage_error && 'Failed' || 'Passed' }} |
+          | Monitoring | ${{ env.monitoring_error && 'Failed' || 'Passed' }} |
+          | Health     | ${{ env.health_warning && 'Warning' || 'Passed' }} |
+
+          ### Issues
+
+          ${{ env.drift_detected && '- Warning: Infrastructure drift detected' || '' }}
+          ${{ env.tasks_warning && '- Warning: Not all tasks running' || '' }}
+          ${{ env.db_error && '- Failed: Database not available' || '' }}
+          ${{ env.storage_error && '- Failed: Storage not accessible' || '' }}
+          ${{ env.monitoring_error && '- Failed: Monitoring not configured' || '' }}
+          ${{ env.health_warning && '- Warning: Health check failed' || '' }}
+          ${{ env.compute_error && '- Failed: Compute issues' || '' }}
+          ${{ env.networking_error && '- Failed: Networking issues' || '' }}
+
+          EOF
+          fi
+          cat ${{ matrix.env }}-test-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.env }}-test-report
+          path: ${{ matrix.env }}-test-report.md
+
+      - name: Destroy if Created
+        if: env.created == 'true' && always()
+        run: terraform destroy -auto-approve -no-color
+        working-directory: environments/${{ matrix.env }}
+
+  test-production:
+    name: Test Production Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.environments == 'all' || github.event.inputs.environments == 'production'
+    environment: production
+    outputs:
+      status: ${{ steps.summary.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Check if Environment Exists
+        id: check-env
+        run: |
+          if aws ecs describe-clusters --clusters prod-paperwurks-cluster --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine if Creating
+        if: steps.check-env.outputs.exists != 'true' && github.event_name != 'schedule' && github.event.inputs.create_if_missing == 'true'
+        run: echo "creating=true" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Cache Terraform
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        uses: actions/cache@v4
+        with:
+          path: environments/prod/.terraform
+          key: terraform-prod-${{ hashFiles('environments/prod/versions.tf') }}
+
+      - name: Terraform Init
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: terraform init
+        working-directory: environments/prod
+
+      - name: Create Environment if Missing
+        if: env.creating == 'true'
+        run: |
+          terraform apply -auto-approve -no-color
+          echo "created=true" >> $GITHUB_ENV
+        working-directory: environments/prod
+
+      - name: Terraform Plan
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        id: plan
+        run: |
+          terraform plan -detailed-exitcode -no-color
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        working-directory: environments/prod
+        continue-on-error: true
+
+      - name: Check for Drift
+        if: (env.creating == 'true' || steps.check-env.outputs.exists == 'true') && steps.plan.outputs.exit_code == '2'
+        run: echo "drift_detected=true" >> $GITHUB_ENV
+
+      - name: Check Networking
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Networking Layer"
+          NAT_COUNT=$(terraform output -json nat_gateway_public_ips | jq -r 'length')
+          if [ "$NAT_COUNT" -lt 2 ]; then
+            echo "Warning: Fewer than 2 NAT Gateways (HA expected)"
+            echo "nat_warning=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Check Compute
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Compute Layer"
+          CLUSTER="prod-paperwurks-cluster"
+          SERVICE="prod-paperwurks-backend"
+          CLUSTER_STATUS=$(aws ecs describe-clusters --clusters $CLUSTER --query 'clusters[0].status' --output text)
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "Failed: Cluster status $CLUSTER_STATUS"
+            echo "compute_error=true" >> $GITHUB_ENV
+          fi
+          RUNNING=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE --query 'services[0].runningCount' --output text)
+          DESIRED=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE --query 'services[0].desiredCount' --output text)
+          if [ "$RUNNING" -lt "$DESIRED" ]; then
+            echo "Failed: Tasks $RUNNING/$DESIRED running"
+            echo "tasks_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Check Database
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Database Layer"
+          DB_STATUS=$(aws rds describe-db-instances --db-instance-identifier paperwurks-prod-db --query 'DBInstances[0].DBInstanceStatus' --output text)
+          MULTI_AZ=$(aws rds describe-db-instances --db-instance-identifier paperwurks-prod-db --query 'DBInstances[0].MultiAZ' --output text | tr '[:upper:]' '[:lower:]')
+          if [ "$DB_STATUS" != "available" ]; then
+            echo "Failed: Database status $DB_STATUS"
+            echo "db_error=true" >> $GITHUB_ENV
+          fi
+          if [ "$MULTI_AZ" != "true" ]; then
+            echo "Failed: Multi-AZ not enabled"
+            echo "multi_az_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Check Storage
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Storage Layer"
+          DOCS_BUCKET=$(terraform output -raw documents_bucket_name)
+          if ! aws s3 ls s3://$DOCS_BUCKET > /dev/null 2>&1; then
+            echo "Failed: Documents bucket not accessible"
+            echo "storage_error=true" >> $GITHUB_ENV
+          else
+            VERSIONING=$(aws s3api get-bucket-versioning --bucket $DOCS_BUCKET --query 'Status' --output text)
+            if [ "$VERSIONING" != "Enabled" ]; then
+              echo "Warning: Versioning not enabled on documents bucket"
+              echo "versioning_warning=true" >> $GITHUB_ENV
+            fi
+          fi
+          UPLOADS_BUCKET=$(terraform output -raw uploads_bucket_name)
+          if ! aws s3 ls s3://$UPLOADS_BUCKET > /dev/null 2>&1; then
+            echo "Failed: Uploads bucket not accessible"
+            echo "storage_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Check Monitoring
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::Monitoring Layer"
+          LOG_GROUP=$(terraform output -raw application_log_group)
+          if ! aws logs describe-log-groups --log-group-name-prefix $LOG_GROUP > /dev/null 2>&1; then
+            echo "Failed: Log group $LOG_GROUP not found"
+            echo "monitoring_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Check ALB Health
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          echo "::group::ALB Health Check"
+          ALB_DNS=$(terraform output -raw alb_dns_name)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://$ALB_DNS/health || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Failed: Health check returned $HTTP_CODE"
+            echo "health_check_error=true" >> $GITHUB_ENV
+          fi
+          echo "::endgroup::"
+        working-directory: environments/prod
+
+      - name: Test Summary
+        id: summary
+        if: env.creating == 'true' || steps.check-env.outputs.exists == 'true'
+        run: |
+          if [ -n "$db_error" ] || [ -n "$storage_error" ] || [ -n "$monitoring_error" ] || [ -n "$tasks_error" ] || [ -n "$health_check_error" ] || [ -n "$multi_az_error" ] || [ -n "$compute_error" ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+          elif [ -n "$drift_detected" ] || [ -n "$nat_warning" ] || [ -n "$versioning_warning" ]; then
+            echo "status=warning" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate Test Report
+        if: always()
+        run: |
+          if [ "${{ steps.check-env.outputs.exists }}" != "true" ] && [ -z "${{ env.creating }}" ]; then
+            cat << EOF > prod-test-report.md
+          ## Production Environment Test Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** not_deployed
+
+          Environment not deployed yet.
+
+          To deploy:
+          \`\`\`bash
+          cd environments/prod
+          terraform init
+          terraform plan
+          terraform apply
+          \`\`\`
+          EOF
+          else
+            STATUS="${{ steps.summary.outputs.status || 'error' }}"
+            cat << EOF > prod-test-report.md
+          ## Production Environment Test Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** $STATUS
+
+          ### Test Results
+
+          | Layer      | Status  |
+          |------------|---------|
+          | Networking | ${{ env.nat_warning && 'Warning' || 'Passed' }} |
+          | Compute    | ${{ env.compute_error && 'Failed' || env.tasks_error && 'Failed' || 'Passed' }} |
+          | Database   | ${{ env.db_error && 'Failed' || env.multi_az_error && 'Failed' || 'Passed' }} |
+          | Storage    | ${{ env.storage_error && 'Failed' || env.versioning_warning && 'Warning' || 'Passed' }} |
+          | Monitoring | ${{ env.monitoring_error && 'Failed' || 'Passed' }} |
+          | Health     | ${{ env.health_check_error && 'Failed' || 'Passed' }} |
+
+          ### Issues
+
+          ${{ env.drift_detected && '- Warning: Infrastructure drift detected' || '' }}
+          ${{ env.nat_warning && '- Warning: Fewer than 2 NAT Gateways' || '' }}
+          ${{ env.tasks_error && '- Failed: Not all tasks running' || '' }}
+          ${{ env.db_error && '- Failed: Database not available' || '' }}
+          ${{ env.multi_az_error && '- Failed: Database not Multi-AZ' || '' }}
+          ${{ env.storage_error && '- Failed: Storage not accessible' || '' }}
+          ${{ env.versioning_warning && '- Warning: Bucket versioning not enabled' || '' }}
+          ${{ env.monitoring_error && '- Failed: Monitoring not configured' || '' }}
+          ${{ env.health_check_error && '- Failed: Health check failed' || '' }}
+          ${{ env.compute_error && '- Failed: Compute issues' || '' }}
+
+          EOF
+          fi
+          cat prod-test-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-test-report
+          path: prod-test-report.md
+
+      - name: Destroy if Created
+        if: env.created == 'true' && always()
+        run: terraform destroy -auto-approve -no-color
+        working-directory: environments/prod
+
+  summary:
+    name: Test Summary & Notifications
+    runs-on: ubuntu-latest
+    needs: [test-nonprod, test-production]
+    if: always()
+    steps:
+      - name: Download All Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: Generate Summary
+        run: |
+          echo "# Infrastructure Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+
+          echo "## Environment Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f reports/dev-test-report/dev-test-report.md ]; then
+            DEV_STATUS=$(grep '**Status:**' reports/dev-test-report/dev-test-report.md | cut -d ' ' -f2)
+          else
+            DEV_STATUS="skipped"
+          fi
+          if [ -f reports/staging-test-report/staging-test-report.md ]; then
+            STAGING_STATUS=$(grep '**Status:**' reports/staging-test-report/staging-test-report.md | cut -d ' ' -f2)
+          else
+            STAGING_STATUS="skipped"
+          fi
+          if [ -f reports/prod-test-report/prod-test-report.md ]; then
+            PROD_STATUS=$(grep '**Status:**' reports/prod-test-report/prod-test-report.md | cut -d ' ' -f2)
+          else
+            PROD_STATUS="skipped"
+          fi
+
+          echo "| Dev       | $DEV_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Staging   | $STAGING_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Production| $PROD_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+          echo "## Detailed Reports" >> $GITHUB_STEP_SUMMARY
+          cat reports/dev-test-report/dev-test-report.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          cat reports/staging-test-report/staging-test-report.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          cat reports/prod-test-report/prod-test-report.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+
+      - name: Check for Failures
+        id: check-failures
+        run: |
+          FAILED_ENVS=""
+          [ "$(grep '**Status:** failed' reports/dev-test-report/dev-test-report.md 2>/dev/null)" ] && FAILED_ENVS="$FAILED_ENVS dev"
+          [ "$(grep '**Status:** failed' reports/staging-test-report/staging-test-report.md 2>/dev/null)" ] && FAILED_ENVS="$FAILED_ENVS staging"
+          [ "$(grep '**Status:** failed' reports/prod-test-report/prod-test-report.md 2>/dev/null)" ] && FAILED_ENVS="$FAILED_ENVS production"
+          if [ -n "$FAILED_ENVS" ]; then
+            echo "has_failures=true" >> $GITHUB_OUTPUT
+            echo "failed_envs=$FAILED_ENVS" >> $GITHUB_OUTPUT
+          else
+            echo "has_failures=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Issue for Failures
+        if: steps.check-failures.outputs.has_failures == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failedEnvs = '${{ steps.check-failures.outputs.failed_envs }}'.trim();
+            const runUrl = process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID;
+            const issueBody = `## Infrastructure Test Failures
+
+            **Failed Environments:** ${failedEnvs}
+            **Date:** ${new Date().toISOString()}
+            **Workflow Run:** [View Details](${runUrl})
+
+            The scheduled tests detected failures in: ${failedEnvs.split(' ').map(env => `- ${env}`).join('\n')}
+
+            Next Steps:
+            1. Review logs: ${runUrl}
+            2. Check CloudWatch
+            3. Run terraform plan
+            4. Fix issues
+            5. Close this issue
+
+            Quick Commands:
+            \`\`\`bash
+            cd environments/${failedEnvs.split(' ')[0]}
+            terraform plan
+            aws logs tail /ecs/${failedEnvs.split(' ')[0]}-paperwurks-backend --since 1h
+            \`\`\``;
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['infrastructure', 'automated-test']
+            });
+            const existingIssue = issues.data.find(issue => issue.title.includes('Infrastructure Test Failure'));
+            if (existingIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `## New Failure\n\n${issueBody}`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Infrastructure Test Failure Detected',
+                body: issueBody,
+                labels: ['infrastructure', 'automated-test', 'urgent']
+              });
+            }
+
+      - name: Send Slack Notification
+        if: steps.check-failures.outputs.has_failures == 'true' && secrets.SLACK_WEBHOOK != ''
+        run: |
+          FAILED_ENVS="${{ steps.check-failures.outputs.failed_envs }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\": \"Infrastructure Test Failures\", \"blocks\": [{\"type\": \"header\", \"text\": {\"type\": \"plain_text\", \"text\": \"Infrastructure Test Failures\"}}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*Failed Environments:* $FAILED_ENVS\\n*Date:* $(date)\\n<$RUN_URL|View Run>\"}}, {\"type\": \"divider\"}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*Action:* Review logs, check CloudWatch, fix drift\"}}]}"
+
+      - name: Send Success Notification
+        if: steps.check-failures.outputs.has_failures != 'true' && github.event_name == 'schedule' && secrets.SLACK_WEBHOOK != ''
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d '{"text": "All infrastructure tests passed"}'
