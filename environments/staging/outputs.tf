@@ -53,7 +53,6 @@ output "s3_documents_bucket" {
   description = "S3 bucket for documents"
 }
 
-
 # Load Balancer Outputs
 output "alb_dns_name" {
   value       = module.compute.alb_dns_name
@@ -64,7 +63,6 @@ output "alb_zone_id" {
   value       = module.compute.alb_zone_id
   description = "Zone ID of the Application Load Balancer"
 }
-
 
 # Storage Outputs
 output "documents_bucket_name" {
@@ -101,4 +99,31 @@ output "dashboard_url" {
 output "application_log_group" {
   description = "Name of the application log group"
   value       = module.monitoring.application_log_group_name
+}
+
+
+output "redis_endpoint" {
+  description = "Redis primary endpoint address"
+  value       = module.elasticache.primary_endpoint_address
+  sensitive   = true
+}
+
+output "redis_port" {
+  description = "Redis port"
+  value       = module.elasticache.redis_port
+}
+
+output "redis_url_parameter" {
+  description = "SSM Parameter Store name for Redis URL"
+  value       = module.elasticache.redis_url_parameter_name
+}
+
+output "redis_endpoint_parameter" {
+  description = "SSM Parameter Store name for Redis endpoint"
+  value       = module.elasticache.redis_endpoint_parameter_name
+}
+
+output "redis_security_group_id" {
+  description = "Security group ID for Redis cluster"
+  value       = module.elasticache.redis_security_group_id
 }

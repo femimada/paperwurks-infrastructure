@@ -30,6 +30,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+
 # Additional permissions for Secrets Manager and SSM
 resource "aws_iam_role_policy" "ecs_task_execution_custom" {
   name = "${var.project_name}-${var.environment}-ecs-execution-custom"
@@ -62,7 +63,17 @@ resource "aws_iam_role_policy" "ecs_task_execution_custom" {
           "kms:DescribeKey"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/paperwurks/${var.environment}/*"
       }
+
     ]
   })
 }
@@ -71,6 +82,8 @@ resource "aws_iam_role_policy" "ecs_task_execution_custom" {
 # ECS Task Role
 # This role is used by the application code running in the container
 # -----------------------------------------------------------------------------
+
+
 
 resource "aws_iam_role" "ecs_task" {
   name = "${var.project_name}-${var.environment}-ecs-task"
@@ -159,6 +172,38 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_ssm_read" {
+  name = "${var.project_name}-${var.environment}-ecs-task-ssm-read"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/paperwurks/${var.environment}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${data.aws_region.current.name}.amazonaws.com"
+          }
+        }
       }
     ]
   })

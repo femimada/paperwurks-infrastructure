@@ -34,40 +34,16 @@ variable "ecs_sg_id" {
   type        = string
 }
 
-variable "ecs_instance_type" {
-  description = "EC2 instance type for ECS cluster"
-  type        = string
-  default     = "t3.medium"
-}
-
-variable "ecs_min_size" {
-  description = "Minimum number of EC2 instances"
-  type        = number
-  default     = 1
-}
-
-variable "ecs_max_size" {
-  description = "Maximum number of EC2 instances"
-  type        = number
-  default     = 3
-}
-
-variable "ecs_desired_capacity" {
-  description = "Desired number of EC2 instances"
-  type        = number
-  default     = 1
-}
-
 variable "backend_image" {
   description = "Docker image for backend service"
   type        = string
-  default     = "nginx:latest" # Placeholder until real image exists
+  default     = "nginx:latest"
 }
 
 variable "worker_image" {
   description = "Docker image for worker service"
   type        = string
-  default     = "nginx:latest" # Placeholder until real image exists
+  default     = "nginx:latest"
 }
 
 variable "backend_cpu" {
@@ -104,4 +80,23 @@ variable "worker_desired_count" {
   description = "Desired number of worker tasks"
   type        = number
   default     = 1
+}
+
+# Redis Configuration
+variable "redis_url_parameter_name" {
+  description = "SSM Parameter name for Redis URL (for Celery)"
+  type        = string
+  default     = ""
+}
+
+variable "redis_endpoint_parameter_name" {
+  description = "SSM Parameter name for Redis endpoint"
+  type        = string
+  default     = ""
+}
+
+variable "redis_port_parameter_name" {
+  description = "SSM Parameter name for Redis port"
+  type        = string
+  default     = ""
 }

@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
   }
 }
 
@@ -72,9 +76,16 @@ module "compute" {
   # Container images (will be updated by CI/CD)
   backend_image = var.backend_image
   worker_image  = var.worker_image
+
+  # Redis configuration (depends on elasticache module)
+  redis_url_parameter_name      = module.elasticache.redis_url_parameter_name
+  redis_endpoint_parameter_name = module.elasticache.redis_endpoint_parameter_name
+  redis_port_parameter_name     = module.elasticache.redis_port_parameter_name
+
+  depends_on = [module.elasticache]
 }
 
-# RDS Database - Multi-AZ for Production
+# RDS Database
 module "database" {
   source = "../../modules/database"
 
@@ -86,11 +97,11 @@ module "database" {
   db_allocated_storage  = var.db_allocated_storage
   db_name               = var.db_name
   db_username           = var.db_username
-  multi_az              = true # Multi-AZ for production HA
+  multi_az              = true # Multi-AZ for production
   backup_retention      = 30   # 30 days for production
 }
 
-# S3 Storage with enhanced lifecycle for production
+# S3 Storage
 module "storage" {
   source = "../../modules/storage"
 
@@ -101,7 +112,7 @@ module "storage" {
   lifecycle_rules   = var.s3_lifecycle_rules
 }
 
-# Enhanced Monitoring for Production
+# Monitoring
 module "monitoring" {
   source = "../../modules/monitoring"
 
@@ -112,78 +123,28 @@ module "monitoring" {
 }
 
 # -----------------------------------------------------------------------------
-# IAM SCOPING: Grant Deploy Role access to Production ECS Resources
+# ElastiCache Redis for Celery Broker - Production Configuration
 # -----------------------------------------------------------------------------
 
-data "aws_iam_role" "deploy_role" {
-  name = "${var.project_name}-deploy-role"
+# Generate secure Redis auth token
+resource "random_password" "redis_auth_token" {
+  length  = 32
+  special = false
 }
 
-data "aws_iam_policy_document" "prod_ecs_deploy" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "ecs:DescribeServices",
-      "ecs:UpdateService",
-    ]
-    resources = [
-      "arn:aws:ecs:${var.aws_region}:*:service/${var.environment}-*/*",
-      module.compute.ecs_cluster_arn,
-      module.compute.ecs_service_arn_backend,
-      module.compute.ecs_service_arn_worker
-    ]
-  }
+module "elasticache" {
+  source = "../../modules/elasticache"
 
-  statement {
-    effect = "Allow"
-    actions = [
-      "ecs:DescribeTaskDefinition",
-      "ecs:RegisterTaskDefinition",
-      "ecs:ListTaskDefinitions"
-    ]
-    resources = ["*"]
-  }
+  project_name          = var.project_name
+  environment           = var.environment
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  ecs_security_group_id = module.networking.ecs_security_group_id
 
-  statement {
-    effect  = "Allow"
-    actions = ["iam:PassRole"]
-    resources = [
-      module.compute.task_execution_role_arn,
-      module.compute.task_role_arn
-    ]
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
-    }
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "logs:GetLogEvents",
-      "logs:DescribeLogStreams"
-    ]
-    resources = ["arn:aws:logs:${var.aws_region}:*:log-group:/ecs/${var.environment}-*"]
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters"
-    ]
-    resources = ["arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/${var.environment}/*"]
-  }
-}
-
-resource "aws_iam_policy" "prod_ecs_deploy_policy" {
-  name        = "${var.project_name}-${var.environment}-ecs-deploy-policy"
-  description = "Allows CI/CD to deploy to the ${var.environment} ECS service."
-  policy      = data.aws_iam_policy_document.prod_ecs_deploy.json
-}
-
-resource "aws_iam_role_policy_attachment" "deploy_role_prod_ecs" {
-  role       = data.aws_iam_role.deploy_role.name
-  policy_arn = aws_iam_policy.prod_ecs_deploy_policy.arn
+  # Production configuration - Cluster mode enabled, Multi-AZ, with failover
+  cluster_mode_enabled     = true
+  auth_token               = random_password.redis_auth_token.result
+  maintenance_window       = "sun:05:00-sun:06:00"
+  snapshot_window          = "03:00-04:00"
+  snapshot_retention_limit = 7
 }

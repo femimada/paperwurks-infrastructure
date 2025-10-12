@@ -53,7 +53,6 @@ output "s3_documents_bucket" {
   description = "S3 bucket for documents"
 }
 
-
 # Load Balancer Outputs
 output "alb_dns_name" {
   value       = module.compute.alb_dns_name
@@ -75,7 +74,6 @@ output "multi_az_enabled" {
   value       = true
   description = "Multi-AZ configuration status"
 }
-
 
 # Storage Outputs
 output "documents_bucket_name" {
@@ -112,4 +110,47 @@ output "dashboard_url" {
 output "application_log_group" {
   description = "Name of the application log group"
   value       = module.monitoring.application_log_group_name
+}
+
+output "redis_configuration_endpoint" {
+  description = "Redis configuration endpoint (cluster mode)"
+  value       = module.elasticache.configuration_endpoint_address
+  sensitive   = true
+}
+
+output "redis_primary_endpoint" {
+  description = "Redis primary endpoint address"
+  value       = module.elasticache.primary_endpoint_address
+  sensitive   = true
+}
+
+output "redis_reader_endpoint" {
+  description = "Redis reader endpoint for read replicas"
+  value       = module.elasticache.reader_endpoint_address
+  sensitive   = true
+}
+
+output "redis_port" {
+  description = "Redis port"
+  value       = module.elasticache.redis_port
+}
+
+output "redis_url_parameter" {
+  description = "SSM Parameter Store name for Redis URL"
+  value       = module.elasticache.redis_url_parameter_name
+}
+
+output "redis_endpoint_parameter" {
+  description = "SSM Parameter Store name for Redis endpoint"
+  value       = module.elasticache.redis_endpoint_parameter_name
+}
+
+output "redis_security_group_id" {
+  description = "Security group ID for Redis cluster"
+  value       = module.elasticache.redis_security_group_id
+}
+
+output "redis_replication_group_id" {
+  description = "ElastiCache replication group ID"
+  value       = module.elasticache.replication_group_id
 }

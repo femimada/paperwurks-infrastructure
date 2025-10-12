@@ -111,8 +111,8 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.environment}-${var.project_name}-backend"
-  network_mode             = "awsvpc"    # CHANGED: Required for Fargate
-  requires_compatibilities = ["FARGATE"] # CHANGED: From EC2
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
   cpu                      = var.backend_cpu
   memory                   = var.backend_memory
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
@@ -144,6 +144,22 @@ resource "aws_ecs_task_definition" "backend" {
         }
       ]
 
+      # Redis configuration from SSM Parameter Store
+      secrets = var.redis_url_parameter_name != "" ? [
+        {
+          name      = "CELERY_BROKER_URL"
+          valueFrom = var.redis_url_parameter_name
+        },
+        {
+          name      = "CELERY_RESULT_BACKEND"
+          valueFrom = var.redis_url_parameter_name
+        },
+        {
+          name      = "REDIS_URL"
+          valueFrom = var.redis_url_parameter_name
+        }
+      ] : []
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -171,8 +187,8 @@ resource "aws_ecs_task_definition" "backend" {
 
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.environment}-${var.project_name}-worker"
-  network_mode             = "awsvpc"    # CHANGED: Required for Fargate
-  requires_compatibilities = ["FARGATE"] # CHANGED: From EC2
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
   cpu                      = var.worker_cpu
   memory                   = var.worker_memory
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
@@ -196,6 +212,22 @@ resource "aws_ecs_task_definition" "worker" {
           value = data.aws_region.current.name
         }
       ]
+
+      # Redis configuration from SSM Parameter Store for Celery workers
+      secrets = var.redis_url_parameter_name != "" ? [
+        {
+          name      = "CELERY_BROKER_URL"
+          valueFrom = var.redis_url_parameter_name
+        },
+        {
+          name      = "CELERY_RESULT_BACKEND"
+          valueFrom = var.redis_url_parameter_name
+        },
+        {
+          name      = "REDIS_URL"
+          valueFrom = var.redis_url_parameter_name
+        }
+      ] : []
 
       logConfiguration = {
         logDriver = "awslogs"

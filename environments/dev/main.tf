@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
   }
 }
 
@@ -72,6 +76,13 @@ module "compute" {
   # Container images (will be updated by CI/CD)
   backend_image = var.backend_image
   worker_image  = var.worker_image
+
+  # Redis configuration (depends on elasticache module)
+  redis_url_parameter_name      = module.elasticache.redis_url_parameter_name
+  redis_endpoint_parameter_name = module.elasticache.redis_endpoint_parameter_name
+  redis_port_parameter_name     = module.elasticache.redis_port_parameter_name
+
+  depends_on = [module.elasticache]
 }
 
 # RDS Database
@@ -107,4 +118,31 @@ module "monitoring" {
   project_name = var.project_name
   environment  = var.environment
   alert_email  = var.alert_email
+}
+
+# -----------------------------------------------------------------------------
+# ElastiCache Redis for Celery Broker
+# -----------------------------------------------------------------------------
+
+# Generate secure Redis auth token
+resource "random_password" "redis_auth_token" {
+  length  = 32
+  special = false
+}
+
+module "elasticache" {
+  source = "../../modules/elasticache"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  ecs_security_group_id = module.networking.ecs_security_group_id
+
+  # Dev configuration
+  cluster_mode_enabled     = false
+  auth_token               = random_password.redis_auth_token.result
+  maintenance_window       = "sun:05:00-sun:06:00"
+  snapshot_window          = "03:00-04:00"
+  snapshot_retention_limit = 3
 }
