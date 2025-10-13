@@ -6,7 +6,7 @@ resource "random_password" "master" {
 
 resource "aws_secretsmanager_secret" "db_credentials" {
   name                    = "${var.project_name}/${var.environment}/database/master-credentials"
-  recovery_window_in_days = var.environment == "prod" ? 30 : 7
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-db-credentials"

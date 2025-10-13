@@ -106,8 +106,6 @@ module "elasticache" {
   vpc_id                = module.networking.vpc_id
   private_subnet_ids    = module.networking.private_subnet_ids
   ecs_security_group_id = module.networking.ecs_security_group_id
-
-  # Dev configuration
   cluster_mode_enabled     = false
   auth_token               = random_password.redis_auth_token.result
   maintenance_window       = "sun:05:00-sun:06:00"
@@ -125,8 +123,6 @@ module "app_config" {
   project_name          = var.project_name
   environment           = var.environment
   documents_bucket_name = module.storage.documents_bucket_name
-
-  # Feature flags 
   enable_ai_analysis         = false
   enable_document_processing = false
   enable_search_integration  = false
@@ -145,7 +141,6 @@ module "app_config" {
 # ECS Fargate Cluster and Services (MUST BE LAST)
 # -----------------------------------------------------------------------------
 
-# ECS Fargate Cluster and Services
 module "compute" {
   source = "../../modules/compute"
 

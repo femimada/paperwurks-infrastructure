@@ -85,7 +85,8 @@ resource "aws_iam_role" "deploy_role" {
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:femimada/paperwurks-python-backend:ref:refs/heads/main",
-            "repo:femimada/paperwurks-python-backend:ref:refs/heads/release"
+            "repo:femimada/paperwurks-python-backend:ref:refs/heads/release",
+            "repo:femimada/paperwurks-python-backend:ref:refs/heads/dev",
           ]
         }
       }
