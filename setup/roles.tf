@@ -80,13 +80,13 @@ resource "aws_iam_role" "deploy_role" {
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        }
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
-            "repo:femimada/paperwurks-python-backend:ref:refs/heads/main",
-            "repo:femimada/paperwurks-python-backend:ref:refs/heads/release",
-            "repo:femimada/paperwurks-python-backend:ref:refs/heads/dev",
+            "repo:femimada/paperwurks-python-backend:environment:dev",
+            "repo:femimada/paperwurks-python-backend:environment:staging",
+            "repo:femimada/paperwurks-python-backend:environment:prod",
           ]
         }
       }

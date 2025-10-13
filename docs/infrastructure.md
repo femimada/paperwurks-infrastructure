@@ -201,9 +201,7 @@ graph LR
 - CI/CD pipeline (in progress)
 
 **Remaining Work**:
-
-- Fix 3 failed resources in dev
-- Deploy to staging
+- Deploy to staging - done
 - Deploy to production
 - Implement CI/CD automation
 
