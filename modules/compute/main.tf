@@ -105,8 +105,6 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-
-
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.environment}-${var.project_name}-backend"
   network_mode             = "awsvpc"
@@ -270,7 +268,6 @@ resource "aws_ecs_task_definition" "backend" {
   }
 }
 
-
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.environment}-${var.project_name}-worker"
   network_mode             = "awsvpc"
@@ -391,10 +388,6 @@ resource "aws_ecs_task_definition" "worker" {
     Environment = var.environment
   }
 }
-
-
-# Data source
-data "aws_region" "current" {}
 
 # -----------------------------------------------------------------------------
 # ECS Services (Fargate)
