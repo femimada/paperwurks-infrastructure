@@ -77,12 +77,31 @@ module "compute" {
   backend_image = var.backend_image
   worker_image  = var.worker_image
 
-  # Redis configuration (depends on elasticache module)
+  # Redis configuration 
   redis_url_parameter_name      = module.elasticache.redis_url_parameter_name
   redis_endpoint_parameter_name = module.elasticache.redis_endpoint_parameter_name
   redis_port_parameter_name     = module.elasticache.redis_port_parameter_name
 
-  depends_on = [module.elasticache]
+  # Django configuration 
+  django_secret_arn                    = module.app_config.django_secret_arn
+  django_debug_parameter               = module.app_config.django_debug_parameter
+  allowed_hosts_parameter              = module.app_config.allowed_hosts_parameter
+  cors_origins_parameter               = module.app_config.cors_origins_parameter
+  log_level_parameter                  = module.app_config.log_level_parameter
+  django_settings_module_parameter     = module.app_config.django_settings_module_parameter
+  storage_bucket_parameter             = module.app_config.storage_bucket_parameter
+  enable_ai_analysis_parameter         = module.app_config.enable_ai_analysis_parameter
+  enable_document_processing_parameter = module.app_config.enable_document_processing_parameter
+  enable_search_integration_parameter  = module.app_config.enable_search_integration_parameter
+
+  # Production security settings
+  csrf_origins_parameter          = module.app_config.csrf_origins_parameter
+  secure_ssl_redirect_parameter   = module.app_config.secure_ssl_redirect_parameter
+  session_cookie_secure_parameter = module.app_config.session_cookie_secure_parameter
+  csrf_cookie_secure_parameter    = module.app_config.csrf_cookie_secure_parameter
+  hsts_seconds_parameter          = module.app_config.hsts_seconds_parameter
+
+  depends_on = [module.elasticache, module.app_config]
 }
 
 # RDS Database
@@ -97,8 +116,8 @@ module "database" {
   db_allocated_storage  = var.db_allocated_storage
   db_name               = var.db_name
   db_username           = var.db_username
-  multi_az              = true # Multi-AZ for production
-  backup_retention      = 30   # 30 days for production
+  multi_az              = true
+  backup_retention      = 30
 }
 
 # S3 Storage
@@ -120,6 +139,28 @@ module "monitoring" {
   environment       = var.environment
   alert_email       = var.alert_email
   slack_webhook_url = var.slack_webhook_url
+}
+
+# -----------------------------------------------------------------------------
+# Application Configuration - Production
+# -----------------------------------------------------------------------------
+
+module "app_config" {
+  source = "../../modules/app_config"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  documents_bucket_name = module.storage.documents_bucket_name
+
+  # Feature flags
+  enable_ai_analysis         = true
+  enable_document_processing = true
+  enable_search_integration  = true
+
+  depends_on = [
+    module.database,
+    module.storage
+  ]
 }
 
 # -----------------------------------------------------------------------------

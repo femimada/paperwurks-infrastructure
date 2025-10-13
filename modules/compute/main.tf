@@ -105,9 +105,7 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# ECS Task Definitions (Fargate)
-# -----------------------------------------------------------------------------
+
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.environment}-${var.project_name}-backend"
@@ -133,6 +131,7 @@ resource "aws_ecs_task_definition" "backend" {
         }
       ]
 
+      # Static environment variables
       environment = [
         {
           name  = "ENVIRONMENT"
@@ -141,24 +140,110 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "AWS_REGION"
           value = data.aws_region.current.name
+        },
+        {
+          name  = "AWS_DEFAULT_REGION"
+          value = data.aws_region.current.name
         }
       ]
 
-      # Redis configuration from SSM Parameter Store
-      secrets = var.redis_url_parameter_name != "" ? [
-        {
-          name      = "CELERY_BROKER_URL"
-          valueFrom = var.redis_url_parameter_name
-        },
-        {
-          name      = "CELERY_RESULT_BACKEND"
-          valueFrom = var.redis_url_parameter_name
-        },
-        {
-          name      = "REDIS_URL"
-          valueFrom = var.redis_url_parameter_name
-        }
-      ] : []
+      # Secrets from Secrets Manager and Parameter Store
+      secrets = concat(
+        # Django secrets from Secrets Manager
+        [
+          {
+            name      = "SECRET_KEY"
+            valueFrom = "${var.django_secret_arn}:SECRET_KEY::"
+          },
+          {
+            name      = "DATABASE_URL"
+            valueFrom = "${var.django_secret_arn}:DATABASE_URL::"
+          }
+        ],
+        # Redis configuration
+        var.redis_url_parameter_name != "" ? [
+          {
+            name      = "REDIS_URL"
+            valueFrom = var.redis_url_parameter_name
+          },
+          {
+            name      = "CELERY_BROKER_URL"
+            valueFrom = var.redis_url_parameter_name
+          },
+          {
+            name      = "CELERY_RESULT_BACKEND"
+            valueFrom = var.redis_url_parameter_name
+          }
+        ] : [],
+        # Django configuration from Parameter Store
+        var.django_debug_parameter != "" ? [
+          {
+            name      = "DEBUG"
+            valueFrom = var.django_debug_parameter
+          },
+          {
+            name      = "ALLOWED_HOSTS"
+            valueFrom = var.allowed_hosts_parameter
+          },
+          {
+            name      = "CORS_ALLOWED_ORIGINS"
+            valueFrom = var.cors_origins_parameter
+          },
+          {
+            name      = "LOG_LEVEL"
+            valueFrom = var.log_level_parameter
+          },
+          {
+            name      = "DJANGO_SETTINGS_MODULE"
+            valueFrom = var.django_settings_module_parameter
+          }
+        ] : [],
+        # AWS configuration from Parameter Store
+        var.storage_bucket_parameter != "" ? [
+          {
+            name      = "AWS_STORAGE_BUCKET_NAME"
+            valueFrom = var.storage_bucket_parameter
+          }
+        ] : [],
+        # Feature flags from Parameter Store
+        var.enable_ai_analysis_parameter != "" ? [
+          {
+            name      = "ENABLE_AI_ANALYSIS"
+            valueFrom = var.enable_ai_analysis_parameter
+          },
+          {
+            name      = "ENABLE_DOCUMENT_PROCESSING"
+            valueFrom = var.enable_document_processing_parameter
+          },
+          {
+            name      = "ENABLE_SEARCH_INTEGRATION"
+            valueFrom = var.enable_search_integration_parameter
+          }
+        ] : [],
+        # Production security settings (only if parameters exist)
+        var.csrf_origins_parameter != "" ? [
+          {
+            name      = "CSRF_TRUSTED_ORIGINS"
+            valueFrom = var.csrf_origins_parameter
+          },
+          {
+            name      = "SECURE_SSL_REDIRECT"
+            valueFrom = var.secure_ssl_redirect_parameter
+          },
+          {
+            name      = "SESSION_COOKIE_SECURE"
+            valueFrom = var.session_cookie_secure_parameter
+          },
+          {
+            name      = "CSRF_COOKIE_SECURE"
+            valueFrom = var.csrf_cookie_secure_parameter
+          },
+          {
+            name      = "SECURE_HSTS_SECONDS"
+            valueFrom = var.hsts_seconds_parameter
+          }
+        ] : []
+      )
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -185,6 +270,7 @@ resource "aws_ecs_task_definition" "backend" {
   }
 }
 
+
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.environment}-${var.project_name}-worker"
   network_mode             = "awsvpc"
@@ -202,6 +288,7 @@ resource "aws_ecs_task_definition" "worker" {
       memory    = var.worker_memory
       essential = true
 
+      # Static environment variables
       environment = [
         {
           name  = "ENVIRONMENT"
@@ -210,24 +297,83 @@ resource "aws_ecs_task_definition" "worker" {
         {
           name  = "AWS_REGION"
           value = data.aws_region.current.name
+        },
+        {
+          name  = "AWS_DEFAULT_REGION"
+          value = data.aws_region.current.name
         }
       ]
 
-      # Redis configuration from SSM Parameter Store for Celery workers
-      secrets = var.redis_url_parameter_name != "" ? [
-        {
-          name      = "CELERY_BROKER_URL"
-          valueFrom = var.redis_url_parameter_name
-        },
-        {
-          name      = "CELERY_RESULT_BACKEND"
-          valueFrom = var.redis_url_parameter_name
-        },
-        {
-          name      = "REDIS_URL"
-          valueFrom = var.redis_url_parameter_name
-        }
-      ] : []
+      # Secrets from Secrets Manager and Parameter Store (same as backend)
+      secrets = concat(
+        # Django secrets from Secrets Manager
+        [
+          {
+            name      = "SECRET_KEY"
+            valueFrom = "${var.django_secret_arn}:SECRET_KEY::"
+          },
+          {
+            name      = "DATABASE_URL"
+            valueFrom = "${var.django_secret_arn}:DATABASE_URL::"
+          }
+        ],
+        # Redis configuration
+        var.redis_url_parameter_name != "" ? [
+          {
+            name      = "REDIS_URL"
+            valueFrom = var.redis_url_parameter_name
+          },
+          {
+            name      = "CELERY_BROKER_URL"
+            valueFrom = var.redis_url_parameter_name
+          },
+          {
+            name      = "CELERY_RESULT_BACKEND"
+            valueFrom = var.redis_url_parameter_name
+          }
+        ] : [],
+        # Django configuration from Parameter Store
+        var.django_debug_parameter != "" ? [
+          {
+            name      = "DEBUG"
+            valueFrom = var.django_debug_parameter
+          },
+          {
+            name      = "ALLOWED_HOSTS"
+            valueFrom = var.allowed_hosts_parameter
+          },
+          {
+            name      = "LOG_LEVEL"
+            valueFrom = var.log_level_parameter
+          },
+          {
+            name      = "DJANGO_SETTINGS_MODULE"
+            valueFrom = var.django_settings_module_parameter
+          }
+        ] : [],
+        # AWS configuration from Parameter Store
+        var.storage_bucket_parameter != "" ? [
+          {
+            name      = "AWS_STORAGE_BUCKET_NAME"
+            valueFrom = var.storage_bucket_parameter
+          }
+        ] : [],
+        # Feature flags from Parameter Store
+        var.enable_ai_analysis_parameter != "" ? [
+          {
+            name      = "ENABLE_AI_ANALYSIS"
+            valueFrom = var.enable_ai_analysis_parameter
+          },
+          {
+            name      = "ENABLE_DOCUMENT_PROCESSING"
+            valueFrom = var.enable_document_processing_parameter
+          },
+          {
+            name      = "ENABLE_SEARCH_INTEGRATION"
+            valueFrom = var.enable_search_integration_parameter
+          }
+        ] : []
+      )
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -245,6 +391,10 @@ resource "aws_ecs_task_definition" "worker" {
     Environment = var.environment
   }
 }
+
+
+# Data source
+data "aws_region" "current" {}
 
 # -----------------------------------------------------------------------------
 # ECS Services (Fargate)

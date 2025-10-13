@@ -50,39 +50,7 @@ module "networking" {
   aws_region         = var.aws_region
   vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
-  nat_gateway_count  = 1 # Single NAT for dev
-}
-
-# ECS Fargate Cluster and Services
-module "compute" {
-  source = "../../modules/compute"
-
-  project_name       = var.project_name
-  environment        = var.environment
-  vpc_id             = module.networking.vpc_id
-  private_subnet_ids = module.networking.private_subnet_ids
-  public_subnet_ids  = module.networking.public_subnet_ids
-  alb_sg_id          = module.networking.alb_security_group_id
-  ecs_sg_id          = module.networking.ecs_security_group_id
-
-  # Fargate task sizing
-  backend_cpu           = var.backend_cpu
-  backend_memory        = var.backend_memory
-  worker_cpu            = var.worker_cpu
-  worker_memory         = var.worker_memory
-  backend_desired_count = var.backend_desired_count
-  worker_desired_count  = var.worker_desired_count
-
-  # Container images (will be updated by CI/CD)
-  backend_image = var.backend_image
-  worker_image  = var.worker_image
-
-  # Redis configuration (depends on elasticache module)
-  redis_url_parameter_name      = module.elasticache.redis_url_parameter_name
-  redis_endpoint_parameter_name = module.elasticache.redis_endpoint_parameter_name
-  redis_port_parameter_name     = module.elasticache.redis_port_parameter_name
-
-  depends_on = [module.elasticache]
+  nat_gateway_count  = 1
 }
 
 # RDS Database
@@ -97,8 +65,8 @@ module "database" {
   db_allocated_storage  = var.db_allocated_storage
   db_name               = var.db_name
   db_username           = var.db_username
-  multi_az              = false # Single-AZ for dev
-  backup_retention      = 7     # 7 days for dev
+  multi_az              = false
+  backup_retention      = 7
 }
 
 # S3 Storage
@@ -145,4 +113,78 @@ module "elasticache" {
   maintenance_window       = "sun:05:00-sun:06:00"
   snapshot_window          = "03:00-04:00"
   snapshot_retention_limit = 3
+}
+
+# -----------------------------------------------------------------------------
+# Application Configuration
+# -----------------------------------------------------------------------------
+
+module "app_config" {
+  source = "../../modules/app_config"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  documents_bucket_name = module.storage.documents_bucket_name
+
+  # Feature flags 
+  enable_ai_analysis         = false
+  enable_document_processing = false
+  enable_search_integration  = false
+
+  # External API keys
+  # nlis_api_key       = var.nlis_api_key
+  # groundsure_api_key = var.groundsure_api_key
+
+  depends_on = [
+    module.database,
+    module.storage
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# ECS Fargate Cluster and Services (MUST BE LAST)
+# -----------------------------------------------------------------------------
+
+# ECS Fargate Cluster and Services
+module "compute" {
+  source = "../../modules/compute"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  public_subnet_ids  = module.networking.public_subnet_ids
+  alb_sg_id          = module.networking.alb_security_group_id
+  ecs_sg_id          = module.networking.ecs_security_group_id
+
+  # Fargate task sizing
+  backend_cpu           = var.backend_cpu
+  backend_memory        = var.backend_memory
+  worker_cpu            = var.worker_cpu
+  worker_memory         = var.worker_memory
+  backend_desired_count = var.backend_desired_count
+  worker_desired_count  = var.worker_desired_count
+
+  # Container images (will be updated by CI/CD)
+  backend_image = var.backend_image
+  worker_image  = var.worker_image
+
+  # Redis configuration (depends on elasticache module)
+  redis_url_parameter_name      = module.elasticache.redis_url_parameter_name
+  redis_endpoint_parameter_name = module.elasticache.redis_endpoint_parameter_name
+  redis_port_parameter_name     = module.elasticache.redis_port_parameter_name
+
+  # Django configuration (depends on app_config module)
+  django_secret_arn                    = module.app_config.django_secret_arn
+  django_debug_parameter               = module.app_config.django_debug_parameter
+  allowed_hosts_parameter              = module.app_config.allowed_hosts_parameter
+  cors_origins_parameter               = module.app_config.cors_origins_parameter
+  log_level_parameter                  = module.app_config.log_level_parameter
+  django_settings_module_parameter     = module.app_config.django_settings_module_parameter
+  storage_bucket_parameter             = module.app_config.storage_bucket_parameter
+  enable_ai_analysis_parameter         = module.app_config.enable_ai_analysis_parameter
+  enable_document_processing_parameter = module.app_config.enable_document_processing_parameter
+  enable_search_integration_parameter  = module.app_config.enable_search_integration_parameter
+
+  depends_on = [module.elasticache, module.app_config]
 }

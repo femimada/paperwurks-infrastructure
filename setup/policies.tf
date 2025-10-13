@@ -146,6 +146,15 @@ data "aws_iam_policy_document" "infra_management" {
     resources = ["*"]
   }
 
+  # ElastiCache - ADDED FOR INF-001
+  statement {
+    effect = "Allow"
+    actions = [
+      "elasticache:*"
+    ]
+    resources = ["*"]
+  }
+
   # IAM (for creating service roles)
   statement {
     effect = "Allow"
@@ -191,6 +200,23 @@ data "aws_iam_policy_document" "infra_management" {
     resources = ["*"]
   }
 
+  # Systems Manager Parameter Store - ADDED FOR INF-001 & INF-002
+  statement {
+    effect = "Allow"
+    actions = [
+      "ssm:PutParameter",
+      "ssm:DeleteParameter",
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+      "ssm:DescribeParameters",
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:ListTagsForResource"
+    ]
+    resources = ["*"]
+  }
+
   # KMS
   statement {
     effect    = "Allow"
@@ -229,7 +255,6 @@ resource "aws_iam_policy" "infra_management" {
   description = "Full infrastructure management permissions for Terraform"
   policy      = data.aws_iam_policy_document.infra_management.json
 }
-
 
 data "aws_iam_policy_document" "cost_explorer" {
   statement {
