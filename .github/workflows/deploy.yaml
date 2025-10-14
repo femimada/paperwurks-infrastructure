@@ -1,11 +1,18 @@
-name: Deploy to Development
+name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
     inputs:
+      action_type:
+        type: choice
+        description: Choose the infrastructure action.
+        required: true
+        options:
+          - deploy
+          - destroy
       environment:
         type: environment
-        description: Environment to deploy
+        description: Target environment (must match a GitHub environment name).
         required: true
 
 permissions:
@@ -33,7 +40,7 @@ jobs:
             echo "environment=prod" >> $GITHUB_OUTPUT
           fi
   deploy:
-    name: Deploy Dev Infrastructure
+    name: Deploy Infrastructure
     needs: setup
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.environment }}
@@ -53,12 +60,40 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: environments/dev
+        working-directory: environments/${{ needs.setup.outputs.environment }}
 
       - name: Terraform Plan
         run: terraform plan -out=tfplan
-        working-directory: environments/dev
+        working-directory: environments/${{ needs.setup.outputs.environment }}
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
-        working-directory: environments/dev
+        working-directory: environments/${{ needs.setup.outputs.environment }}
+
+  destroy:
+    name: Destroy Infrastructure
+    needs: setup
+    if: ${{ github.event.inputs.action_type == 'destroy' }}
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.environment }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: environments/${{ needs.setup.outputs.environment }}
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+        working-directory: environments/${{ needs.setup.outputs.environment }}
