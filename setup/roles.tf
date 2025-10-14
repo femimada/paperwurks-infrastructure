@@ -27,8 +27,14 @@ resource "aws_iam_role" "infra_role" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "token.actions.githubusercontent.com:sub" = "repo:femimada/paperwurks-infrastructure:ref:refs/heads/main"
-
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:femimada/paperwurks-infrastructure:environment:dev",
+              "repo:femimada/paperwurks-infrastructure:environment:staging",
+              "repo:femimada/paperwurks-infrastructure:environment:prod",
+            ]
           }
         }
       }
@@ -80,8 +86,8 @@ resource "aws_iam_role" "deploy_role" {
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:femimada/paperwurks-python-backend:environment:dev",

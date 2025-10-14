@@ -279,7 +279,7 @@ resource "aws_ecs_task_definition" "worker" {
 
   container_definitions = jsonencode([
     {
-      name      = "celery-worker"
+      name      = "paperwurks-worker"
       image     = var.worker_image
       cpu       = var.worker_cpu
       memory    = var.worker_memory

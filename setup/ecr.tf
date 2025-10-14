@@ -41,16 +41,16 @@ resource "aws_ecr_lifecycle_policy" "paperwurks_backend" {
   })
 }
 # ECR repo for worker jobs (Celery, etc.)
-resource "aws_ecr_repository" "celery_worker" {
-  name                 = "celery-worker"
+resource "aws_ecr_repository" "paperwurks_worker" {
+  name                 = "paperwurks-worker"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
   }
 }
-resource "aws_ecr_lifecycle_policy" "celery_worker" {
-  repository = aws_ecr_repository.celery_worker.name
+resource "aws_ecr_lifecycle_policy" "paperwurks_worker" {
+  repository = aws_ecr_repository.paperwurks_worker.name
 
   policy = jsonencode({
     rules = [

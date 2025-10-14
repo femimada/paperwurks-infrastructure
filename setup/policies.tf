@@ -57,7 +57,7 @@ data "aws_iam_policy_document" "ecr" {
     ]
     resources = [
       aws_ecr_repository.paperwurks_backend.arn,
-      aws_ecr_repository.celery_worker.arn,
+      aws_ecr_repository.paperwurks_worker.arn,
       aws_ecr_repository.nginx_proxy.arn
     ]
   }
