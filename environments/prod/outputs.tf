@@ -154,3 +154,8 @@ output "redis_replication_group_id" {
   description = "ElastiCache replication group ID"
   value       = module.elasticache.replication_group_id
 }
+
+output "task_definition_family_worker" {
+  description = "Worker task definition family name"
+  value       = module.compute.task_definition_family_worker
+}

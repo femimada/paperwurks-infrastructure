@@ -96,6 +96,22 @@ data "aws_iam_policy_document" "ecs_deploy" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "iam:PassRole"
+    ]
+    resources = [
+      "arn:aws:iam::*:role/paperwurks-*-ecs-task-execution",
+      "arn:aws:iam::*:role/paperwurks-*-ecs-task"
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_iam_policy" "ecs_deploy" {

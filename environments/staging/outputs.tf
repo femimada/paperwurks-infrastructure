@@ -127,3 +127,8 @@ output "redis_security_group_id" {
   description = "Security group ID for Redis cluster"
   value       = module.elasticache.redis_security_group_id
 }
+
+output "task_definition_family_worker" {
+  description = "Worker task definition family name"
+  value       = module.compute.task_definition_family_worker
+}
