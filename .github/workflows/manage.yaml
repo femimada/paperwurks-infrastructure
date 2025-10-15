@@ -42,6 +42,7 @@ jobs:
   deploy:
     name: Deploy Infrastructure
     needs: setup
+    if: ${{ github.event.inputs.action_type == 'deploy' }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.environment }}
 
