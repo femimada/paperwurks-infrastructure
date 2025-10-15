@@ -75,7 +75,7 @@ resource "random_password" "django_secret_key" {
 resource "aws_secretsmanager_secret" "django_config" {
   name                    = "${var.project_name}/${var.environment}/django"
   description             = "Django application secrets for ${var.environment}"
-  recovery_window_in_days = var.environment == "prod" ? 30 : 7
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-django-secrets"
@@ -101,7 +101,7 @@ resource "aws_secretsmanager_secret_version" "django_config" {
 resource "aws_secretsmanager_secret" "external_apis" {
   name                    = "${var.project_name}/${var.environment}/external_apis"
   description             = "External API keys and credentials for ${var.environment}"
-  recovery_window_in_days = var.environment == "prod" ? 30 : 7
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-external-apis"
