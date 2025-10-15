@@ -203,11 +203,22 @@ resource "aws_ssm_parameter" "log_level" {
   }
 }
 
+
+
 resource "aws_ssm_parameter" "django_settings_module" {
   name        = "/${var.project_name}/${var.environment}/django/DJANGO_SETTINGS_MODULE"
   description = "Django settings module path"
   type        = "String"
-  value       = "apps.config.settings.${var.environment == "prod" ? "production" : var.environment}"
+  
+  value = lookup(
+    {
+      "prod"    = "production",
+      "staging" = "staging",
+      "dev"     = "development"
+    },
+    var.environment,
+    "development" 
+  )
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-django-settings-module"
@@ -215,6 +226,8 @@ resource "aws_ssm_parameter" "django_settings_module" {
     Project     = var.project_name
   }
 }
+
+
 
 # -----------------------------------------------------------------------------
 # Parameter Store - AWS Configuration
