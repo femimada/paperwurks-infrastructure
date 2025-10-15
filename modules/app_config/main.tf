@@ -31,9 +31,9 @@ locals {
 
   # Environment-specific ALLOWED_HOSTS
   allowed_hosts = {
-    dev     = "localhost,127.0.0.1,dev-alb-*.elb.amazonaws.com"
-    staging = "staging-alb-*.elb.amazonaws.com,staging.paperwurks.co.uk"
-    prod    = "alb-*.elb.amazonaws.com,api.paperwurks.co.uk,paperwurks.co.uk"
+      dev     = "localhost,127.0.0.1,10.0.0.0/16,*.elb.amazonaws.com"
+      staging = "10.0.0.0/16,*.elb.amazonaws.com,staging.paperwurks.co.uk"
+      prod    = "10.0.0.0/16,*.elb.amazonaws.com,api.paperwurks.co.uk,paperwurks.co.uk"
   }
 
   # Environment-specific CORS origins
@@ -204,7 +204,6 @@ resource "aws_ssm_parameter" "log_level" {
 }
 
 
-
 resource "aws_ssm_parameter" "django_settings_module" {
   name        = "/${var.project_name}/${var.environment}/django/DJANGO_SETTINGS_MODULE"
   description = "Django settings module path"
@@ -212,15 +211,14 @@ resource "aws_ssm_parameter" "django_settings_module" {
   
   value = lookup(
     {
-      "prod"    = "production",
-      "staging" = "staging",
-      "dev"     = "development"
+      "prod"    = "apps.config.settings.production",
+      "staging" = "apps.config.settings.staging",
+      "dev"     = "apps.config.settings.development"
     },
     var.environment,
-    "development" 
+    "apps.config.settings.development" 
   )
-
-  tags = {
+    tags = {
     Name        = "${var.project_name}-${var.environment}-django-settings-module"
     Environment = var.environment
     Project     = var.project_name
