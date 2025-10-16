@@ -1,0 +1,38 @@
+name: Validate Terraform
+
+on:
+  pull_request:
+    branches: [dev, release, main]
+    paths:
+      - "environments/**"
+      - "modules/**"
+      - "*.tf"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: environments/${{ matrix.environment }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: environments/${{ matrix.environment }}
+
+      - name: Terraform Plan (Dry Run)
+        run: terraform plan -input=false
+        working-directory: environments/${{ matrix.environment }}
+        env:
+          TF_VAR_skip_validation: true

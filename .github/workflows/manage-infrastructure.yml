@@ -1,0 +1,118 @@
+name: Manage Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_type:
+        type: choice
+        description: Infrastructure action
+        required: true
+        options: [deploy, destroy]
+      environment:
+        type: environment
+        description: Target environment
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate-inputs:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.validate.outputs.environment }}
+      action: ${{ steps.validate.outputs.action }}
+    steps:
+      - name: Validate Action and Environment
+        id: validate
+        run: |
+          # Validate action
+          if [[ ! "${{ inputs.action_type }}" =~ ^(deploy|destroy)$ ]]; then
+            echo "Invalid action: ${{ inputs.action_type }}"
+            exit 1
+          fi
+
+          # Validate environment
+          if [[ ! "${{ inputs.environment }}" =~ ^(dev|staging|prod)$ ]]; then
+            echo "Invalid environment: ${{ inputs.environment }}"
+            exit 1
+          fi
+
+          # Block prod destroy without confirmation
+          if [[ "${{ inputs.action_type }}" == "destroy" && "${{ inputs.environment }}" == "prod" ]]; then
+            echo "ERROR: Production destroy is blocked. Use Terraform CLI manually."
+            exit 1
+          fi
+
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "action=${{ inputs.action_type }}" >> $GITHUB_OUTPUT
+
+  terraform:
+    name: Terraform ${{ needs.validate-inputs.outputs.action }}
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-terraform-role
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: GHA-Terraform-${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: environments/${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Terraform Plan
+        if: needs.validate-inputs.outputs.action == 'deploy'
+        run: |
+          terraform plan -out=tfplan -input=false
+          terraform show -no-color tfplan > plan.txt
+        working-directory: environments/${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Upload Plan
+        if: needs.validate-inputs.outputs.action == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ needs.validate-inputs.outputs.environment }}
+          path: |
+            environments/${{ needs.validate-inputs.outputs.environment }}/tfplan
+            environments/${{ needs.validate-inputs.outputs.environment }}/plan.txt
+          retention-days: 5
+
+      - name: Terraform Apply
+        if: needs.validate-inputs.outputs.action == 'deploy'
+        run: terraform apply -auto-approve tfplan
+        working-directory: environments/${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Terraform Destroy
+        if: needs.validate-inputs.outputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+        working-directory: environments/${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Infrastructure ${{ needs.validate-inputs.outputs.action }} Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action:** ${{ needs.validate-inputs.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Failure
+        if: failure() && needs.validate-inputs.outputs.environment == 'prod'
+        run: |
+          curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\":x: Production infrastructure ${{ needs.validate-inputs.outputs.action }} failed\"}"

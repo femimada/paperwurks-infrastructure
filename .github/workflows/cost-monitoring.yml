@@ -1,0 +1,146 @@
+name: Cost Monitoring & Infrastructure Status
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # Daily at 9am UTC
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: Check specific environment (or all via schedule)
+        required: false
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  validate-inputs:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.set-envs.outputs.environments }}
+    steps:
+      - name: Validate Environment and Variables
+        id: set-envs
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [[ "${{ github.event.inputs.environment }}" =~ ^(dev|staging|prod)$ ]]; then
+              echo "environments=[\"${{ github.event.inputs.environment }}\"]" >> $GITHUB_OUTPUT
+            else
+              echo "Error: Invalid environment '${{ github.event.inputs.environment }}'" >&2
+              exit 1
+            fi
+          else
+            echo "environments=[\"dev\", \"staging\", \"prod\"]" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -z "${{ vars.PROJECT_NAME }}" ]; then
+            echo "Error: PROJECT_NAME repository variable is not set" >&2
+            exit 1
+          fi
+
+          if [ -z "${{ vars.AWS_REGION }}" ]; then
+            echo "Error: AWS_REGION repository variable is not set" >&2
+            exit 1
+          fi
+
+  check-infrastructure:
+    name: ${{ matrix.environment }} Infrastructure
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.validate-inputs.outputs.environments) }}
+      fail-fast: false
+    outputs:
+      monthly_cost: ${{ steps.costs.outputs.monthly_projected }}
+      nat_count: ${{ steps.nat.outputs.nat_count }}
+      cluster_exists: ${{ steps.ecs.outputs.cluster_exists }}
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/paperwurks-cost-monitor-role
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: GHA-CostMon-${{ matrix.environment }}
+          role-duration-seconds: 3600
+
+      - name: Verify Cost Explorer Access
+        id: cost-explorer
+        run: |
+          echo "Checking Cost Explorer access..." >> $GITHUB_STEP_SUMMARY
+          if aws ce get-cost-and-usage \
+            --time-period Start=$(date -d '1 day ago' +%Y-%m-%d),End=$(date +%Y-%m-%d) \
+            --granularity DAILY \
+            --metrics BlendedCost \
+            --query 'ResultsByTime' \
+            --output json >/dev/null 2>&1; then
+            echo "cost_explorer_access=true" >> $GITHUB_OUTPUT
+            echo "Cost Explorer access verified" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "cost_explorer_access=false" >> $GITHUB_OUTPUT
+            echo "Cost Explorer unavailable - using estimates" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check ECS Clusters
+        id: ecs
+        run: |
+          ENV="${{ matrix.environment }}"
+          CLUSTER_NAME="${{ vars.PROJECT_NAME }}-${ENV}-cluster"
+
+          echo "### ECS Cluster: $CLUSTER_NAME" >> $GITHUB_STEP_SUMMARY
+
+          if aws ecs describe-clusters --clusters $CLUSTER_NAME \
+            --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            
+            tasks=$(aws ecs list-tasks --cluster $CLUSTER_NAME --desired-status RUNNING \
+              --query 'taskArns' --output json) || { 
+              echo "Error: Failed to list ECS tasks" >&2; exit 1; 
+            }
+            task_count=$(echo "$tasks" | jq 'length')
+            
+            echo "- Status: Active" >> $GITHUB_STEP_SUMMARY
+            echo "- Running Tasks: $task_count" >> $GITHUB_STEP_SUMMARY
+            
+            services=$(aws ecs list-services --cluster $CLUSTER_NAME \
+              --query 'serviceArns[]' --output text) || {
+              echo "Error: Failed to list services" >&2; exit 1;
+            }
+            
+            if [ ! -z "$services" ]; then
+              echo "- Services:" >> $GITHUB_STEP_SUMMARY
+              for service in $services; do
+                service_name=$(basename $service)
+                svc_info=$(aws ecs describe-services --cluster $CLUSTER_NAME \
+                  --services $service \
+                  --query 'services[0].[desiredCount,runningCount]' \
+                  --output text) || {
+                  echo "Error: Failed to describe service $service_name" >&2; exit 1;
+                }
+                desired=$(echo "$svc_info" | cut -f1)
+                running=$(echo "$svc_info" | cut -f2)
+                echo "  - $service_name: $running/$desired" >> $GITHUB_STEP_SUMMARY
+              done
+            fi
+            
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+            echo "task_count=$task_count" >> $GITHUB_OUTPUT
+            
+            echo "$tasks" > ecs_tasks.json
+            echo "$services" > ecs_services.txt
+          else
+            echo "- Status: Not Found" >> $GITHUB_STEP_SUMMARY
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+            echo "task_count=0" >> $GITHUB_OUTPUT
+            
+            echo "[]" > ecs_tasks.json
+            echo "" > ecs_services.txt
+          fi
